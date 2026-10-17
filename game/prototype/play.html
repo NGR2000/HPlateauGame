@@ -193,6 +193,12 @@
   .tc-btn.tc-fire.active { background: rgba(255, 112, 67, 0.7); }
   #tc-rip.active { background: rgba(255, 255, 255, 0.3); }
   .tc-btn.active { background: rgba(255, 255, 255, 0.25); }
+  .tc-btn[hidden], #tc-driving[hidden], #tc-flight[hidden] { display: none; }
+  #mobile-menu { display: none; }
+  #tc-driving { display: flex; justify-content: space-between; width: 100%; gap: 16px; }
+  .tc-drive-group { display: flex; gap: 8px; }
+  .tc-btn.tc-drive { width: 64px; height: 64px; font-size: 16px; font-weight: bold; }
+  #tc-car-reverse { font-size: 12px; line-height: 1.4; }
 
   /* hover:none かつ pointer:coarse = タッチ操作の端末とみなす */
   @media (hover: none) and (pointer: coarse) {
@@ -215,6 +221,42 @@
     #credit[open] { max-width: 60vw; }
     .tc-btn.tc-small { width: 38px; height: 38px; font-size: 12px; }
     .tc-btn.tc-big { width: 64px; height: 64px; font-size: 17px; }
+  }
+  @media (hover: none) and (pointer: coarse) {
+    .chase-mode #touch-controls {
+      left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right));
+      bottom: max(10px, env(safe-area-inset-bottom)); align-items: stretch;
+    }
+    .chase-mode #tc-toolbar { justify-content: flex-start; gap: 6px; flex-wrap: wrap; }
+    .chase-mode .tc-btn.tc-small { width: 44px; height: 44px; }
+    .chase-mode #pause-btn { position: static; transform: none; min-width: 84px; height: 44px; padding: 4px 8px; }
+    .chase-mode #mobile-menu:not([hidden]) {
+      display: block; position: fixed; top: max(8px, env(safe-area-inset-top));
+      right: max(10px, env(safe-area-inset-right)); z-index: 8;
+      color: #e8f0f6; font: 13px "Yu Gothic UI", sans-serif;
+    }
+    #mobile-menu > summary {
+      list-style: none; width: fit-content; margin-left: auto; min-height: 44px;
+      padding: 0 12px; display: flex; align-items: center; box-sizing: border-box;
+      border: 1px solid #345a7a; border-radius: 10px; background: rgba(16, 26, 36, 0.72);
+    }
+    #mobile-menu > summary::-webkit-details-marker { display: none; }
+    #mobile-menu-content {
+      margin-top: 6px; padding: 10px; width: min(310px, calc(100vw - 40px));
+      max-height: calc(100dvh - 160px); overflow-y: auto; border-radius: 10px;
+      background: rgba(10, 20, 30, 0.94);
+    }
+    #mobile-menu .panel {
+      position: static; transform: none; min-width: 0; max-width: none;
+      background: none; margin-top: 8px; padding: 8px 0; text-align: left;
+    }
+    .chase-mode #mobile-menu #help, .chase-mode #mobile-menu #credit { max-width: none; font-size: 11px; }
+    .mobile-driving-hint { margin: 0 0 10px; font-size: 12px; color: #bed1dd; }
+    .chase-mode #creative-flight-info { margin: 0 0 4px; }
+    .chase-mode #overview-button { display: none; }
+    .chase-mode #tc-overview[aria-pressed="true"] { background: #2e6da4; }
+    .chase-mode .tc-btn.tc-drive { background: rgba(16, 26, 36, 0.58); }
+    .chase-mode .tc-btn.tc-drive.active { background: rgba(46, 109, 164, 0.86); }
   }
   #loading {
     position: fixed; inset: 0; display: flex; flex-direction: column;
@@ -699,16 +741,33 @@
   <p id="balloon-model-error" role="status" hidden>チームの気球モデルを読み込めなかったため、「自分のチーム」の目印が付いた標準の気球を使っています。</p>
 </div>
 
+<details id="mobile-menu" hidden>
+  <summary aria-label="運転メニュー">☰ メニュー</summary>
+  <div id="mobile-menu-content">
+    <p class="mobile-driving-hint">前進＋左右を同時に長押しで運転。ブレーキは長押しで後退します。景色をドラッグすると周囲を見渡せます。</p>
+  </div>
+</details>
 <div id="touch-controls">
-  <div class="tc-row">
+  <div id="tc-toolbar" class="tc-row">
     <button id="tc-pibal" class="tc-btn tc-small" type="button" aria-label="パイバル表示切替">P</button>
     <button id="tc-tscale" class="tc-btn tc-small" type="button" aria-label="時間加速切替">×1</button>
     <button id="tc-view" class="tc-btn tc-small" type="button" aria-label="視点切替">👁</button>
     <button id="tc-marker" class="tc-btn tc-small" type="button" aria-label="マーカー投下">📍</button>
+    <button id="tc-overview" class="tc-btn tc-small" type="button" aria-label="気球と車の俯瞰切替" aria-pressed="false" hidden>俯瞰</button>
   </div>
-  <div class="tc-row tc-main">
+  <div id="tc-flight" class="tc-row tc-main">
     <button id="tc-rip" class="tc-btn tc-big" type="button" aria-label="リップライン(長押し)">RIP</button>
     <button id="tc-burner" class="tc-btn tc-big tc-fire" type="button" aria-label="バーナー(長押し)">🔥</button>
+  </div>
+  <div id="tc-driving" hidden aria-label="チェイスカーの操作">
+    <div class="tc-drive-group">
+      <button id="tc-car-left" class="tc-btn tc-drive" type="button" aria-label="左ハンドル（長押し）">◀ 左</button>
+      <button id="tc-car-right" class="tc-btn tc-drive" type="button" aria-label="右ハンドル（長押し）">右 ▶</button>
+    </div>
+    <div class="tc-drive-group">
+      <button id="tc-car-reverse" class="tc-btn tc-drive" type="button" aria-label="ブレーキ・後退（長押し）">ブレーキ<br>後退</button>
+      <button id="tc-car-forward" class="tc-btn tc-drive tc-fire" type="button" aria-label="前進（長押し）">前進 ▲</button>
+    </div>
   </div>
 </div>
 

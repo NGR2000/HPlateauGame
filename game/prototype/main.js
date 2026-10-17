@@ -15,6 +15,7 @@ import { createBalloonAutopilot } from './balloonAutopilot.js';
 import { carAutopilotControl } from './carAutopilot.js';
 import { loadCreativeCarModel } from './creativeCar.js';
 import { balloonSoundMix } from './balloonAudio.js';
+import { holdButton, bindCarControls } from './touchControls.js';
 import { loadTeamBalloonModel, createTeamBalloon, markTeamBalloon, updateTeamBalloonLabel, createCreativeFleet } from './creativeBalloons.js';
 
 // 創作の入口は同じ場所・風・チェイスモードから始める。
@@ -448,6 +449,7 @@ function updateSounds(windKt) {
 
 // ---- 入力 ----
 const input = { burner: false, rip: false };
+let resetRaceControls = null;
 let timeScale = 1;
 let fpv = false;
 let flightReady = false; // 離陸前のキー入力を無視する
@@ -568,6 +570,7 @@ function cycleTimeScale() {
 }
 function togglePause() {
   paused = !paused;
+  resetRaceControls?.();
   const btn = document.getElementById('pause-btn');
   btn.textContent = paused ? '▶ 再開' : '⏸ 一時停止';
   btn.classList.toggle('active', paused);
@@ -605,19 +608,8 @@ addEventListener('keyup', (e) => {
 // **既存の操作(Space/R/C 等)には触れない**: chaseMode でなければ何も起きない
 addEventListener('keydown', (e) => {
   if (!chaseMode) return;
-  if (e.code === 'KeyW' || e.code === 'ArrowUp') raceCarInput.throttle = 1;
-  if (e.code === 'KeyS' || e.code === 'ArrowDown') raceCarInput.throttle = -1;
-  if (e.code === 'KeyA' || e.code === 'ArrowLeft') raceCarInput.steer = -1;
-  if (e.code === 'KeyD' || e.code === 'ArrowRight') raceCarInput.steer = 1;
   if (e.code === 'KeyV' && !e.repeat) toggleRaceView();
   if (e.code === 'KeyB' && !e.repeat) toggleRaceOverview();
-});
-addEventListener('keyup', (e) => {
-  if (!chaseMode) return;
-  if ((e.code === 'KeyW' || e.code === 'ArrowUp') && raceCarInput.throttle > 0) raceCarInput.throttle = 0;
-  if ((e.code === 'KeyS' || e.code === 'ArrowDown') && raceCarInput.throttle < 0) raceCarInput.throttle = 0;
-  if ((e.code === 'KeyA' || e.code === 'ArrowLeft') && raceCarInput.steer < 0) raceCarInput.steer = 0;
-  if ((e.code === 'KeyD' || e.code === 'ArrowRight') && raceCarInput.steer > 0) raceCarInput.steer = 0;
 });
 
 // ---- タッチ操作ボタン(スマホ・タブレットなどタッチ端末向け) ----
@@ -643,14 +635,6 @@ if (isTouchDevice) {
 // キー説明をたたむと #help の高さが変わる。その上に載せているチェイスカーの状態表示・無線を置き直す
 document.getElementById('help-keys').addEventListener('toggle', stackBottomLeft);
 function setupTouchControls() {
-  function holdButton(btn, onDown, onUp) {
-    const down = (e) => { e.preventDefault(); btn.classList.add('active'); onDown(); };
-    const up = () => { btn.classList.remove('active'); onUp(); };
-    btn.addEventListener('pointerdown', down);
-    btn.addEventListener('pointerup', up);
-    btn.addEventListener('pointercancel', up);
-    btn.addEventListener('pointerleave', up);
-  }
   holdButton(document.getElementById('tc-burner'),
     () => { input.burner = true; }, () => { input.burner = false; });
   holdButton(document.getElementById('tc-rip'),
@@ -658,7 +642,10 @@ function setupTouchControls() {
   document.getElementById('tc-marker').addEventListener('click', () => {
     if (flightReady) dropMarker();
   });
-  document.getElementById('tc-view').addEventListener('click', toggleFpv);
+  document.getElementById('tc-view').addEventListener('click', () => {
+    if (chaseMode) toggleRaceView(); else toggleFpv();
+  });
+  document.getElementById('tc-overview').addEventListener('click', toggleRaceOverview);
   document.getElementById('tc-tscale').addEventListener('click', cycleTimeScale);
   document.getElementById('tc-pibal').addEventListener('click', togglePibal);
   document.getElementById('overview-button').addEventListener('click', toggleRaceOverview);
@@ -1587,7 +1574,7 @@ function placeRaceOrbitCamera() {
   hasPrevOrbitPos = false;
 }
 function toggleRaceView() {
-  if (creativeWorld && raceOverview) toggleRaceOverview();
+  if (raceOverview) toggleRaceOverview();
   raceViewMode = raceViewMode === 'orbit' ? 'chase' : 'orbit';
   updateRaceControlsEnabled();
   if (raceViewMode === 'orbit' && !raceOverview) placeRaceOrbitCamera();
@@ -1604,6 +1591,10 @@ function toggleRaceOverview() {
 // **どちらでもない(orbit かつ overview オフ)ときだけ** OrbitControls を有効にする
 function updateRaceControlsEnabled() {
   controls.enabled = !raceOverview && raceViewMode === 'orbit';
+  const touchOverview = document.getElementById('tc-overview');
+  touchOverview.setAttribute('aria-pressed', String(raceOverview));
+  touchOverview.textContent = raceOverview ? '車へ' : '俯瞰';
+  document.getElementById('tc-view').setAttribute('aria-label', '車の視点切替（周囲／追走）');
   if (creativeWorld) {
     const button = document.getElementById('overview-button');
     button.textContent = raceOverview ? '車の視点へ' : '6機を見渡す';
@@ -3659,6 +3650,26 @@ function updateRaceHud() {
 // DOM 側(instruments-race-only 等)は既定で隠してあるので、通常モードでは何もしない
 function applyRaceHudMode() {
   if (!chaseMode) return;
+  document.body.classList.add('chase-mode');
+  document.getElementById('tc-flight').hidden = true;
+  document.getElementById('tc-marker').hidden = true;
+  document.getElementById('tc-driving').hidden = false;
+  document.getElementById('tc-overview').hidden = false;
+  document.getElementById('tc-view').textContent = '視点';
+  if (isTouchDevice) {
+    document.getElementById('tc-toolbar').append(document.getElementById('pause-btn'));
+    const menu = document.getElementById('mobile-menu');
+    menu.hidden = false;
+    const content = document.getElementById('mobile-menu-content');
+    for (const id of ['tc-toolbar', 'help', 'instruments', 'credit']) {
+      content.append(document.getElementById(id));
+    }
+    // 視点を選んだらすぐ景色へ戻す。一時停止中は再開ボタンを見せておく。
+    for (const id of ['tc-view', 'tc-overview']) {
+      document.getElementById(id).addEventListener('click', () => { menu.open = false; });
+    }
+  }
+  resetRaceControls = bindCarControls(raceCarInput);
   document.getElementById('instruments-pilot-only').style.display = 'none';
   document.getElementById('instruments-race-only').style.display = '';
   document.getElementById('target-label').textContent = '気球→ターゲット';
