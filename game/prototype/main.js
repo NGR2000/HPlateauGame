@@ -14,6 +14,7 @@ import { createPlayerCar } from './playerCar.js';
 import { createBalloonAutopilot } from './balloonAutopilot.js';
 import { carAutopilotControl } from './carAutopilot.js';
 import { loadCreativeCarModel } from './creativeCar.js';
+import { balloonSoundMix } from './balloonAudio.js';
 import { loadTeamBalloonModel, createTeamBalloon, markTeamBalloon, updateTeamBalloonLabel, createCreativeFleet } from './creativeBalloons.js';
 
 // 創作の入口は同じ場所・風・チェイスモードから始める。
@@ -396,7 +397,6 @@ function buildMarkerMesh() {
 // ブラウザの自動再生制限があるため、初回のユーザー操作で初期化し、
 // suspended のままなら操作のたびに resume する(前回鳴らなかった原因への対処)
 let audioCtx = null, burnerGain = null, ripGain = null, windGain = null;
-let sndBurnerOn = false, sndRipOn = false;
 
 function ensureAudio() {
   if (!audioCtx) {
@@ -432,15 +432,18 @@ function updateSounds(windKt) {
   if (!audioCtx || audioCtx.state !== 'running') return;
   const t = audioCtx.currentTime;
   const bOn = input.burner && state.fuel > 0;
-  if (bOn !== sndBurnerOn) {
-    sndBurnerOn = bOn;
-    burnerGain.gain.setTargetAtTime(bOn ? 0.4 : 0, t, bOn ? 0.04 : 0.18);
+  let levels = { burner: bOn ? 0.4 : 0, rip: input.rip ? 0.25 : 0 };
+  if (chaseMode && raceCar) {
+    const car = raceCar.info();
+    levels = balloonSoundMix([
+      { pos: state.pos, burner: bOn, rip: input.rip },
+      ...(creativeFleet?.soundSources() ?? []),
+    ], { x: car.x, y: car.y + 1.5, z: car.z });
   }
-  if (input.rip !== sndRipOn) {
-    sndRipOn = input.rip;
-    ripGain.gain.setTargetAtTime(input.rip ? 0.25 : 0, t, input.rip ? 0.04 : 0.12);
-  }
-  windGain.gain.setTargetAtTime(THREE.MathUtils.clamp(windKt / 40, 0, 1) * 0.15, t, 0.4);
+  // 点火状態が同じでも距離は変わるので、毎フレーム滑らかに音量を追従させる。
+  burnerGain.gain.setTargetAtTime(paused ? 0 : levels.burner, t, 0.12);
+  ripGain.gain.setTargetAtTime(paused ? 0 : levels.rip, t, 0.12);
+  windGain.gain.setTargetAtTime(paused ? 0 : THREE.MathUtils.clamp(windKt / 40, 0, 1) * 0.15, t, 0.4);
 }
 
 // ---- 入力 ----
@@ -1171,7 +1174,7 @@ const RACE_CHASE_UP_M = 3.2;  // 追走視点: 車の床から何m上に置く�
 // 気球と車の両方を見下ろす俯瞰(B キー)。V(orbit/chase)とは別枠のオン・オフで、
 // **気球が高く上がって画面から見失う**問題への対策(2026-09-06)。
 // 距離は2体の間隔に応じて自動で伸ばすので、離れるほどカメラも引く
-let raceOverview = creativeWorld;
+let raceOverview = false;
 const RACE_OVERVIEW_MIN_DIST_M = 150; // 2体が近いとき(離陸直後など)の最小距離
 const CHASE_BEST_KEY = 'chase-marker-race-best'; // 通常モードの自己ベスト(BEST_KEY)とは別に持つ
 if (chaseMode) {
@@ -3361,12 +3364,7 @@ function startFlight(x, z) {
   // ?mode=chase: プレイヤーの車も同じ理由で離陸地点に置く(気球と同じ x,z から出発)
   spawnRaceCar(x, z);
   if (creativeWorld) {
-    // 車は地上、自分のチームと5機は上空から自動飛行を始める。
-    state.pos.y += 50;
-    state.heat = 0.65;
-    state.vy = 0.4;
-    state.grounded = false;
-    balloon.group.position.copy(state.pos);
+    // 自分のチームは車と同じ離陸地点から出発し、周囲の5機は上空を飛ぶ。
     const tm = terrain.map;
     creativeFleet = createCreativeFleet({ startX: x, startZ: z,
       getHeight: terrain.getHeight, windAt,
@@ -3729,10 +3727,10 @@ renderer.setAnimationLoop(() => {
     if (creativeFleet) creativeFleet.update(dt);
     stepMarker(dt);
     stepClock(dt);
-    updateSounds(w.kt);
     if (chaseMode && raceAutopilot && raceAutopilot.shouldDrop(state.pos)) dropMarker();
     // プレイヤーの車(?mode=chase)。道路グラフは見ない自由走行
     if (raceCar) raceCar.update(dt, raceCarInput);
+    updateSounds(w.kt);
     // 2号車・3号車(参考動作)。carAutopilot.js の単純な追尾で、道路グラフは見ない
     if (raceCar2) {
       raceCar2.update(dt, carAutopilotControl(

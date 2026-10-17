@@ -127,7 +127,7 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds 
     pos.y = getHeight(pos.x, pos.z) + profile.height;
     mesh.position.copy(pos);
     group.add(mesh);
-    return { mesh, pos, vy: 0, heat: 0.65, profile,
+    return { mesh, pos, vy: 0, heat: 0.65, burner: false, rip: false, profile,
       pilot: createBalloonAutopilot({ windAt,
         targetX: profile.dx, targetZ: profile.dz, cruiseScanFt: profile.cruise }) };
   });
@@ -141,6 +141,8 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds 
       for (const balloon of balloons) {
         const { pos, pilot, profile } = balloon;
         const control = pilot.control(pos, balloon.vy, h);
+        balloon.burner = control.burner;
+        balloon.rip = control.rip;
         balloon.heat = THREE.MathUtils.clamp(balloon.heat
           + (control.burner ? 0.055 * h : 0) - (control.rip ? 0.16 * h : 0) - 0.012 * h, 0, 1);
         balloon.vy += (7 * (balloon.heat - 0.5) - 0.5 * balloon.vy) * h;
@@ -165,5 +167,6 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds 
       }
     }
   }
-  return { group, update, positions: () => balloons.map(balloon => balloon.pos) };
+  return { group, update, positions: () => balloons.map(balloon => balloon.pos),
+    soundSources: () => balloons.map(({ pos, burner, rip }) => ({ pos, burner, rip })) };
 }
