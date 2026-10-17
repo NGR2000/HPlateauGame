@@ -14,6 +14,19 @@ import { createPlayerCar } from './playerCar.js';
 import { createBalloonAutopilot } from './balloonAutopilot.js';
 import { carAutopilotControl } from './carAutopilot.js';
 
+// 創作の入口は同じ場所・風・チェイスモードから始める。
+// 共有URLの実在世界向け設定が混ざっても、この舞台を移動させない。
+const creativeWorld = new URLSearchParams(location.search).get('world') === 'creative';
+if (creativeWorld) {
+  history.replaceState(null, '', `${location.pathname}?world=creative&mode=chase`);
+  document.title = '創作の世界 — 佐賀・嘉瀬川';
+  document.body.classList.add('creative-world');
+  document.getElementById('world-name').textContent = '創作の世界 · 佐賀・嘉瀬川';
+  document.querySelector('#loading .logo').textContent = '創作の世界';
+  document.querySelector('#loading .tagline').textContent = '実際の地形から、これからつくる街へ。';
+  document.getElementById('creative-note').hidden = false;
+}
+
 // ---- 舞台設定 ----
 const TILE_RADIUS = 2; // 5x5タイル ≒ 20km四方
 let AREA = null;       // { lon, lat, name? } エリア選択またはURLで決まる
@@ -2150,7 +2163,7 @@ function renderWeatherConditions(data, idx) {
 
   lines.push('');
   lines.push('熱気球は早朝や夕凪の穏やかな風のときに飛びます。ガストはできるだけない方が望ましいですが、');
-  lines.push('「何ktから飛べない」という明確な基準はないため、SORAでは合否を判定していません。');
+  lines.push('「何ktから飛べない」という明確な基準はないため、このゲームでは合否を判定していません。');
   if (marks.length) lines.push(`(目安に達した項目: ${marks.join('・')})`);
 
   // 合否は出さないので、枠の色は付けない(判定しているように見えてしまうため)
