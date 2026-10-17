@@ -349,6 +349,8 @@
   }
   #world-nav { margin-top: 8px; padding-top: 6px; border-top: 1px solid #ffffff30; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   #world-name { color: #ccd9d2; font-size: 11px; }
+  #creative-flight-info { color: #a9f0e6; font-size: 12px; margin: 6px 0; }
+  #overview-button { color: #d4fff7; background: #23544f; border: 1px solid #63978e; border-radius: 5px; padding: 5px 9px; cursor: pointer; font: inherit; }
   .creative-world #setup-link, .creative-world #howto-link, .creative-world .mode-separator { display: none; }
   #creative-note { color: #b9cec4; margin-top: 6px; max-width: 320px; line-height: 1.6; }
   #loading .logo { font-size: clamp(22px, 5vw, 36px); letter-spacing: .08em; }
@@ -379,7 +381,7 @@
     <div class="row"><span>気球 巡航目標</span><span class="num" id="race-cruise">--</span></div>
     <div class="row"><span>1号車(あなた) 速度</span><span class="num" id="race-car-speed">-- km/h</span></div>
     <div class="row"><span>1号車→ターゲット</span><span class="num" id="race-car-target">---- m</span></div>
-    <div class="row"><span>1号車→気球</span><span class="num" id="race-car-balloon">---- m</span></div>
+    <div class="row"><span id="race-car-balloon-label">1号車→気球</span><span class="num" id="race-car-balloon">---- m</span></div>
   </div>
   <div class="row"><span>マーカー</span><span class="num" id="marker-info">残り 1</span></div>
   <div class="row"><span>残り時間</span><span class="num" id="clock">30:00</span></div>
@@ -681,17 +683,20 @@
   <details id="help-keys-race" class="kbd-only" style="display:none">
     <summary>操作説明(マーカー回収レース)</summary>
     <b>W/S</b>/<b>↑↓</b> 加減速 <b>A/D</b>/<b>←→</b> ハンドル<br>
-    <b>V</b> 視点切替(俯瞰/追走) <b>B</b> 気球と車を一緒に見下ろす俯瞰<br>
+    <b>V</b> 視点切替(俯瞰/追走) <b>B</b> <span id="race-overview-help">気球と車を一緒に見下ろす俯瞰</span><br>
     <b>1-4</b> 時間加速 ×1/×2/×4/×8 <b>P</b> パイバル表 表示/非表示<br>
     俯瞰時: マウスドラッグ 視点回転 / ホイール ズーム
   </details>
   <a id="setup-link" href="#">本格モード</a>
   <span class="mode-separator">/</span> <a id="howto-link" href="#">使い方</a>
+  <p id="creative-flight-info" hidden>自分のチーム：MV56b · 合計6機が自動飛行</p>
+  <button id="overview-button" type="button" aria-pressed="true" hidden>車の視点へ</button>
   <nav id="world-nav" aria-label="世界の移動">
     <span id="world-name">実際のデータの世界</span>
     <a id="home-link" href="./">ホームへ</a>
   </nav>
   <p id="car-model-error" role="status" hidden>車両モデルを読み込めなかったため、標準の車で開始しました。再読み込みで再試行できます。</p>
+  <p id="balloon-model-error" role="status" hidden>チームの気球モデルを読み込めなかったため、「自分のチーム」の目印が付いた標準の気球を使っています。</p>
 </div>
 
 <div id="touch-controls">

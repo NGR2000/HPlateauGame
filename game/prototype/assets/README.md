@@ -17,3 +17,20 @@ blender --background --disable-autoexec --python tools/export_chase_car.py -- \
   game/prototype/assets/source/sky_chase_car.blend \
   game/prototype/assets/sky_chase_car.glb
 ```
+
+## チームの熱気球 MV56b
+
+ユーザー提供の `MV56b_hot_air_balloon.zip` 内のBlenderファイルを
+`source/MV56b_hot_air_balloon.blend` に保存しています。
+ゲーム用は `MV56b_hot_air_balloon.glb` です。
+床・照明・カメラを除き、球皮、バスケット、ツインバーナーと配色を保持しています。
+曲線の細い断面を軽量化し、材質ごとにまとめて書き出します。メートル寸法はそのままです。
+
+```sh
+blender --background --disable-autoexec --python tools/export_team_balloon.py -- \
+  game/prototype/assets/source/MV56b_hot_air_balloon.blend \
+  game/prototype/assets/MV56b_hot_air_balloon.glb
+```
+
+このモデルは創作側の自分のチーム1機にだけ使い、残りの5機は別配色の軽量モデルです。
+「自分のチーム / MV56b」の札を付け、遠くでも見分けられるようにしています。

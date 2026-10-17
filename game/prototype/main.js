@@ -14,6 +14,7 @@ import { createPlayerCar } from './playerCar.js';
 import { createBalloonAutopilot } from './balloonAutopilot.js';
 import { carAutopilotControl } from './carAutopilot.js';
 import { loadCreativeCarModel } from './creativeCar.js';
+import { loadTeamBalloonModel, createTeamBalloon, markTeamBalloon, updateTeamBalloonLabel, createCreativeFleet } from './creativeBalloons.js';
 
 // 創作の入口は同じ場所・風・チェイスモードから始める。
 // 共有URLの実在世界向け設定が混ざっても、この舞台を移動させない。
@@ -26,6 +27,10 @@ if (creativeWorld) {
   document.querySelector('#loading .logo').textContent = '創作の世界';
   document.querySelector('#loading .tagline').textContent = '実際の地形から、これからつくる街へ。';
   document.getElementById('creative-note').hidden = false;
+  document.getElementById('creative-flight-info').hidden = false;
+  document.getElementById('race-overview-help').textContent = '6機と車を見渡す俯瞰';
+  document.getElementById('overview-button').hidden = false;
+  document.getElementById('race-car-balloon-label').textContent = '1号車→自分のチーム';
 }
 
 // ---- 舞台設定 ----
@@ -653,6 +658,7 @@ function setupTouchControls() {
   document.getElementById('tc-view').addEventListener('click', toggleFpv);
   document.getElementById('tc-tscale').addEventListener('click', cycleTimeScale);
   document.getElementById('tc-pibal').addEventListener('click', togglePibal);
+  document.getElementById('overview-button').addEventListener('click', toggleRaceOverview);
 }
 setupTouchControls();
 
@@ -1150,6 +1156,7 @@ const chaseMode = mainParams.get('mode') === 'chase';
 // (離陸前の座標はまだ無いので、chasecar.js の地上クルーと同じ理由で startFlight から呼ぶ)
 let raceCar = null;              // createPlayerCar() の戻り値
 let raceAutopilot = null;        // createBalloonAutopilot() の戻り値
+let creativeFleet = null;       // 創作の世界だけに追加する、周囲の5機
 const raceCarInput = { throttle: 0, steer: 0 };
 // 2号車・3号車(参考動作、捕獲判定には関与しない)。carAutopilot.js の単純な追尾で動く。
 // **本体の chaseCar/chaseCar2(devMode+road の道路グラフ+A*地上クルー)とは無関係**の別物。
@@ -1164,7 +1171,7 @@ const RACE_CHASE_UP_M = 3.2;  // 追走視点: 車の床から何m上に置く�
 // 気球と車の両方を見下ろす俯瞰(B キー)。V(orbit/chase)とは別枠のオン・オフで、
 // **気球が高く上がって画面から見失う**問題への対策(2026-09-06)。
 // 距離は2体の間隔に応じて自動で伸ばすので、離れるほどカメラも引く
-let raceOverview = false;
+let raceOverview = creativeWorld;
 const RACE_OVERVIEW_MIN_DIST_M = 150; // 2体が近いとき(離陸直後など)の最小距離
 const CHASE_BEST_KEY = 'chase-marker-race-best'; // 通常モードの自己ベスト(BEST_KEY)とは別に持つ
 if (chaseMode) {
@@ -1195,13 +1202,18 @@ document.getElementById('load-title').textContent =
 loadingEl.style.display = '';
 
 const loadEl = document.getElementById('load-progress');
-const [terrain, creativeCarModel] = await Promise.all([
+const [terrain, creativeCarModel, teamBalloonModel] = await Promise.all([
   buildTerrain(AREA.lon, AREA.lat, TILE_RADIUS,
     (done, total) => { loadEl.textContent = `${done} / ${total}`; }),
   creativeWorld ? loadCreativeCarModel().catch((error) => {
     console.warn('創作の車両モデルを読み込めませんでした:', error);
     document.getElementById('car-model-error').hidden = false;
     return null; // 通信に失敗しても従来の車体で操作を続けられる
+  }) : null,
+  creativeWorld ? loadTeamBalloonModel().catch((error) => {
+    console.warn('チームの気球モデルを読み込めませんでした:', error);
+    document.getElementById('balloon-model-error').hidden = false;
+    return null;
   }) : null,
 ]);
 scene.add(terrain.group);
@@ -1572,6 +1584,7 @@ function placeRaceOrbitCamera() {
   hasPrevOrbitPos = false;
 }
 function toggleRaceView() {
+  if (creativeWorld && raceOverview) toggleRaceOverview();
   raceViewMode = raceViewMode === 'orbit' ? 'chase' : 'orbit';
   updateRaceControlsEnabled();
   if (raceViewMode === 'orbit' && !raceOverview) placeRaceOrbitCamera();
@@ -1588,6 +1601,11 @@ function toggleRaceOverview() {
 // **どちらでもない(orbit かつ overview オフ)ときだけ** OrbitControls を有効にする
 function updateRaceControlsEnabled() {
   controls.enabled = !raceOverview && raceViewMode === 'orbit';
+  if (creativeWorld) {
+    const button = document.getElementById('overview-button');
+    button.textContent = raceOverview ? '車の視点へ' : '6機を見渡す';
+    button.setAttribute('aria-pressed', String(raceOverview));
+  }
 }
 
 // 距離の表し方(1km未満はm)。状態表示と無線報告で同じ言い方にする
@@ -3342,9 +3360,25 @@ function startFlight(x, z) {
   spawnChaseCars();
   // ?mode=chase: プレイヤーの車も同じ理由で離陸地点に置く(気球と同じ x,z から出発)
   spawnRaceCar(x, z);
+  if (creativeWorld) {
+    // 車は地上、自分のチームと5機は上空から自動飛行を始める。
+    state.pos.y += 50;
+    state.heat = 0.65;
+    state.vy = 0.4;
+    state.grounded = false;
+    balloon.group.position.copy(state.pos);
+    const tm = terrain.map;
+    creativeFleet = createCreativeFleet({ startX: x, startZ: z,
+      getHeight: terrain.getHeight, windAt,
+      bounds: { minX: tm.minX, minZ: tm.minZ,
+        maxX: tm.minX + tm.n * terrain.tileMeters,
+        maxZ: tm.minZ + tm.n * terrain.tileMeters } });
+    scene.add(creativeFleet.group);
+  }
 }
 
-const balloon = buildBalloon();
+const balloon = teamBalloonModel ? createTeamBalloon(teamBalloonModel) : buildBalloon();
+if (creativeWorld && !teamBalloonModel) markTeamBalloon(balloon.group);
 scene.add(balloon.group);
 
 const targetGroundY = terrain.getHeight(TARGET_XZ.x, TARGET_XZ.z);
@@ -3648,6 +3682,7 @@ function applyRaceHudMode() {
   document.getElementById('instruments').open = false;
   document.getElementById('pibal').open = false;
   document.getElementById('credit').open = false;
+  updateRaceControlsEnabled();
 }
 
 // ---- カメラ初期配置 ----
@@ -3691,6 +3726,7 @@ renderer.setAnimationLoop(() => {
       input.rip = ctrl.rip;
     }
     const w = stepPhysics(dt);
+    if (creativeFleet) creativeFleet.update(dt);
     stepMarker(dt);
     stepClock(dt);
     updateSounds(w.kt);
@@ -3736,11 +3772,11 @@ renderer.setAnimationLoop(() => {
     // バーナー点火で球皮内面がふわっと暖色に明るくなる(点滅ではなく滑らかな変化)
     const glowTarget = balloon.flame.visible ? 1 : 0;
     envGlow += (glowTarget - envGlow) * Math.min(1, dt * 2.5);
-    balloon.envInnerMat.color.setRGB(1 + 0.3 * envGlow, 1 + 0.12 * envGlow, 1);
+    balloon.envInnerMat?.color.setRGB(1 + 0.3 * envGlow, 1 + 0.12 * envGlow, 1);
     // リップラインを引いている間はロープが引き下がる
     const pullTarget = input.rip ? 1 : 0;
     ripPull += (pullTarget - ripPull) * Math.min(1, dt * 6);
-    balloon.rope.position.y = balloon.ropeBaseY - 0.18 * ripPull;
+    if (balloon.rope) balloon.rope.position.y = balloon.ropeBaseY - 0.18 * ripPull;
 
     if (chaseMode && raceCar) {
       // ?mode=chase: 気球ではなく、プレイヤーが操縦する車にカメラを合わせる
@@ -3748,11 +3784,20 @@ renderer.setAnimationLoop(() => {
       if (raceOverview) {
         // B キー: 気球と車の中間点を見下ろす。気球が高く上がって見失う対策なので、
         // 高度差も含めた3D距離で間隔を測り、離れるほどカメラも引く(ドラッグでは動かせない)
-        const midX = (state.pos.x + c.x) / 2;
-        const midY = (state.pos.y + c.y) / 2;
-        const midZ = (state.pos.z + c.z) / 2;
+        let midX = (state.pos.x + c.x) / 2;
+        let midY = (state.pos.y + c.y) / 2;
+        let midZ = (state.pos.z + c.z) / 2;
         const sep = Math.hypot(state.pos.x - c.x, state.pos.y - c.y, state.pos.z - c.z);
-        const dist = Math.max(RACE_OVERVIEW_MIN_DIST_M, sep * 1.2);
+        let dist = Math.max(RACE_OVERVIEW_MIN_DIST_M, sep * 1.2);
+        if (creativeFleet) {
+          const points = [state.pos, new THREE.Vector3(c.x, c.y, c.z), ...creativeFleet.positions()];
+          const viewBounds = new THREE.Box3().setFromPoints(points);
+          viewBounds.max.y += 28; // 球皮まで含めて6機を画面に収める
+          const center = viewBounds.getCenter(new THREE.Vector3());
+          midX = center.x; midY = center.y; midZ = center.z;
+          dist = Math.max(RACE_OVERVIEW_MIN_DIST_M, viewBounds.getSize(new THREE.Vector3()).length() * 1.2)
+            * Math.max(1, 1 / camera.aspect);
+        }
         camera.position.set(midX, midY + dist * 0.6, midZ + dist * 0.8);
         camera.lookAt(midX, midY, midZ);
       } else if (raceViewMode === 'chase') {
@@ -3840,5 +3885,6 @@ renderer.setAnimationLoop(() => {
   }
 
   if (!fpv && !carView && !(chaseMode && (raceViewMode === 'chase' || raceOverview))) controls.update();
+  if (creativeWorld) updateTeamBalloonLabel(balloon.group, camera);
   renderer.render(scene, camera);
 });
