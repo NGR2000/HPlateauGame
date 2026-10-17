@@ -13,6 +13,7 @@ import { createChaseCar } from './chasecar.js';
 import { createPlayerCar } from './playerCar.js';
 import { createBalloonAutopilot } from './balloonAutopilot.js';
 import { carAutopilotControl } from './carAutopilot.js';
+import { loadCreativeCarModel } from './creativeCar.js';
 
 // 創作の入口は同じ場所・風・チェイスモードから始める。
 // 共有URLの実在世界向け設定が混ざっても、この舞台を移動させない。
@@ -1194,8 +1195,15 @@ document.getElementById('load-title').textContent =
 loadingEl.style.display = '';
 
 const loadEl = document.getElementById('load-progress');
-const terrain = await buildTerrain(AREA.lon, AREA.lat, TILE_RADIUS,
-  (done, total) => { loadEl.textContent = `${done} / ${total}`; });
+const [terrain, creativeCarModel] = await Promise.all([
+  buildTerrain(AREA.lon, AREA.lat, TILE_RADIUS,
+    (done, total) => { loadEl.textContent = `${done} / ${total}`; }),
+  creativeWorld ? loadCreativeCarModel().catch((error) => {
+    console.warn('創作の車両モデルを読み込めませんでした:', error);
+    document.getElementById('car-model-error').hidden = false;
+    return null; // 通信に失敗しても従来の車体で操作を続けられる
+  }) : null,
+]);
 scene.add(terrain.group);
 loadingEl.remove();
 
@@ -1526,6 +1534,7 @@ function spawnRaceCar(x, z) {
   raceCar = createPlayerCar({
     getHeight: terrain.getHeight, startX: x, startZ: z, bounds,
     bodyColor: 0xffb300, markColor: 0x00e5ff,
+    bodyModel: creativeCarModel,
   });
   scene.add(raceCar.group);
   // 上空から見つけるための60mの柱は、自分で操縦している車には要らないので消しておく

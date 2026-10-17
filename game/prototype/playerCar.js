@@ -27,26 +27,34 @@ const CAR_LIFT = DRAPE_LIFT;
 
 // 車体(見た目)。chasecar.js の 'car'(自家用車型)に似せた簡易版。
 // プレイヤー車と分かるよう、既定色は chasecar.js の2号車とも1号車とも違う色にしてある
-function buildPlayerCarMesh(bodyColor = 0xffb300, markColor = 0x00e5ff) {
+function buildPlayerCarMesh(bodyColor = 0xffb300, markColor = 0x00e5ff, bodyModel = null) {
   const group = new THREE.Group();
   group.name = 'player-car';
 
-  const box = (w, h, l, y, z, color) => {
-    const m = new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, l),
-      new THREE.MeshLambertMaterial({ color }),
-    );
-    m.position.set(0, y, z);
-    return m;
-  };
+  if (bodyModel) {
+    // 車両ルートの道路描画用オフセットを車体だけで相殺し、タイヤを実地形に接地させる。
+    const bodyRoot = new THREE.Group();
+    bodyRoot.position.y = -CAR_LIFT;
+    bodyRoot.add(bodyModel);
+    group.add(bodyRoot);
+  } else {
+    const box = (w, h, l, y, z, color) => {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, l),
+        new THREE.MeshLambertMaterial({ color }),
+      );
+      m.position.set(0, y, z);
+      return m;
+    };
 
-  // 寸法は chasecar.js の CAR_SHAPES.car とだいたい揃えてある(全長4.3m級)
-  group.add(box(1.75, 0.78, 4.30, 0.39, 0, bodyColor));
-  group.add(box(1.58, 0.56, 2.10, 1.06, 0.25, bodyColor));
-  // フロントガラス(局所 -Z 側 = 前)。前後を見分けるための面
-  group.add(box(1.50, 0.46, 0.10, 1.06, -0.80, 0x2a3442));
-  // テールランプ(後ろが分かるよう、局所 +Z 側に小さな赤を1つ)
-  group.add(box(1.60, 0.12, 0.08, 0.55, 2.10, 0xd32f2f));
+    // 寸法は chasecar.js の CAR_SHAPES.car とだいたい揃えてある(全長4.3m級)
+    group.add(box(1.75, 0.78, 4.30, 0.39, 0, bodyColor));
+    group.add(box(1.58, 0.56, 2.10, 1.06, 0.25, bodyColor));
+    // フロントガラス(局所 -Z 側 = 前)。前後を見分けるための面
+    group.add(box(1.50, 0.46, 0.10, 1.06, -0.80, 0x2a3442));
+    // テールランプ(後ろが分かるよう、局所 +Z 側に小さな赤を1つ)
+    group.add(box(1.60, 0.12, 0.08, 0.55, 2.10, 0xd32f2f));
+  }
 
   // 上空(俯瞰カメラ)から見つけるための目印の柱。chasecar.js の車と同じ仕組み
   // (実車の全長5m未満は、数百m〜km単位の俯瞰では点にもならず見失う)。
@@ -76,12 +84,13 @@ function buildPlayerCarMesh(bodyColor = 0xffb300, markColor = 0x00e5ff) {
  *   (外へ出ると getHeight が 0 を返し、車が地面の下に埋まって見えなくなる)
  * @param {number} [opts.bodyColor=0xffb300] 車体の色
  * @param {number} [opts.headingDeg=0] 初期の向き(度、北0・時計回り)
+ * @param {THREE.Object3D} [opts.bodyModel=null] 車体モデル。前方-Z、底面Y=0、単位m
  * @returns {{group:THREE.Group, update:Function, info:Function}}
  */
 export function createPlayerCar({
-  getHeight, startX = 0, startZ = 0, bounds = null, bodyColor = 0xffb300, markColor = 0x00e5ff, headingDeg = 0,
+  getHeight, startX = 0, startZ = 0, bounds = null, bodyColor = 0xffb300, markColor = 0x00e5ff, headingDeg = 0, bodyModel = null,
 }) {
-  const group = buildPlayerCarMesh(bodyColor, markColor);
+  const group = buildPlayerCarMesh(bodyColor, markColor, bodyModel);
 
   const car = {
     x: startX, z: startZ,
