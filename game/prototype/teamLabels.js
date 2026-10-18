@@ -27,6 +27,7 @@ export function addTeamLabel(group, { text, color, name, width }) {
     map: texture, depthTest: false, depthWrite: false, sizeAttenuation: false,
   }));
   label.name = name;
+  label.visible = false; // 俯瞰に切り替えたときだけ表示する。
   label.userData.pixelWidth = width;
   label.userData.pixelHeight = height;
   // 非表示の60m目印柱は含めず、モデルの上端に付ける。

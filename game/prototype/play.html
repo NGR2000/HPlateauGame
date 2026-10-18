@@ -725,9 +725,9 @@
   <details id="help-keys-race" class="kbd-only" style="display:none">
     <summary>操作説明(マーカー回収レース)</summary>
     <b>W/S</b>/<b>↑↓</b> 加減速 <b>A/D</b>/<b>←→</b> ハンドル<br>
-    <b>V</b> 視点切替(俯瞰/追走) <b>B</b> <span id="race-overview-help">気球と車を一緒に見下ろす俯瞰</span><br>
+    <b>V</b> 進行方向 / 気球を見る <b>O</b> <span id="race-overview-help">気球と車を一緒に見下ろす俯瞰</span>(Bも可)<br>
     <b>1-4</b> 時間加速 ×1/×2/×4/×8 <b>P</b> パイバル表 表示/非表示<br>
-    俯瞰時: マウスドラッグ 視点回転 / ホイール ズーム
+    停車中: ドラッグで見回す。俯瞰・停車中: ホイール／ピンチで拡大縮小。俯瞰を開き直すと自分のチームに戻ります。
   </details>
   <a id="setup-link" href="#">本格モード</a>
   <span class="mode-separator">/</span> <a id="howto-link" href="#">使い方</a>
@@ -744,7 +744,7 @@
 <details id="mobile-menu" hidden>
   <summary aria-label="運転メニュー">☰ メニュー</summary>
   <div id="mobile-menu-content">
-    <p class="mobile-driving-hint">前進＋左右を同時に長押しで運転。ブレーキは長押しで後退します。景色をドラッグすると周囲を見渡せます。</p>
+    <p class="mobile-driving-hint">前進＋左右を同時に長押しで運転。ブレーキは長押しで後退します。気球へ／前方へで見る方向を切り替え。停車中はドラッグで見回せます。俯瞰中もピンチで拡大縮小し、周りの気球を眺められます。</p>
   </div>
 </details>
 <div id="touch-controls">
@@ -809,7 +809,7 @@
     <div class="howto-label">マーカー回収レース(実験)</div>
     <div class="howto-note">気球はオートパイロットで自動飛行し、あなたは地上の車を操縦して
     ターゲット付近へ先回りします(気球ではなく車を操縦する、通常モードとは逆の遊び方です)。
-    <b>W/S/A/D</b>で運転、<b>V</b>で視点切替(俯瞰/追走)、<b>B</b>で気球と車を一緒に見下ろす俯瞰。</div>
+    <b>W/S/A/D</b>で運転、<b>V</b>で進行方向／気球を見る、<b>O</b>(Bも可)で俯瞰と運転を切り替え。</div>
     <button id="setup-chase1" type="button" class="howto-dev-btn">マーカー回収レースを始める</button>
     <button id="setup-chase0" type="button" class="howto-dev-btn" hidden>通常モードに戻す</button>
     <button id="setup-close" type="button" class="howto-close-btn">閉じる</button>

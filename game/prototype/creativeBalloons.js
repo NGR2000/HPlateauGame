@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createBalloonAutopilot } from './balloonAutopilot.js';
-import { addTeamLabel, updateTeamLabel } from './teamLabels.js';
+import { addTeamLabel } from './teamLabels.js';
 
 export async function loadTeamBalloonModel() {
   const { scene } = await new GLTFLoader().loadAsync(
@@ -14,10 +14,6 @@ export async function loadTeamBalloonModel() {
 export function markTeamBalloon(group) {
   group.name = 'creative-team-balloon';
   addTeamLabel(group, { text: '気球', color: '#70ddff', name: 'team-balloon-label', width: 42 });
-}
-
-export function updateTeamBalloonLabel(group, camera, viewportHeight) {
-  updateTeamLabel(group.getObjectByName('team-balloon-label'), camera, viewportHeight);
 }
 
 export function createTeamBalloon(model) {

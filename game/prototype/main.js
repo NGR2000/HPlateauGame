@@ -17,7 +17,9 @@ import { loadCreativeCarModel } from './creativeCar.js';
 import { balloonSoundMix } from './balloonAudio.js';
 import { holdButton, bindCarControls } from './touchControls.js';
 import { addTeamLabel, updateTeamLabel, separateTeamLabels } from './teamLabels.js';
-import { loadTeamBalloonModel, createTeamBalloon, markTeamBalloon, updateTeamBalloonLabel, createCreativeFleet } from './creativeBalloons.js';
+import { createStoppedCamera } from './stoppedCamera.js';
+import { createChaseOverview } from './chaseOverview.js';
+import { loadTeamBalloonModel, createTeamBalloon, markTeamBalloon, createCreativeFleet } from './creativeBalloons.js';
 
 // 創作の入口は同じ場所・風・チェイスモードから始める。
 // 共有URLの実在世界向け設定が混ざっても、この舞台を移動させない。
@@ -31,7 +33,7 @@ if (creativeWorld) {
   document.querySelector('#loading .tagline').textContent = '実際の地形から、これからつくる街へ。';
   document.getElementById('creative-note').hidden = false;
   document.getElementById('creative-flight-info').hidden = false;
-  document.getElementById('race-overview-help').textContent = '6機と車を見渡す俯瞰';
+  document.getElementById('race-overview-help').textContent = '自分の気球と車を見渡す俯瞰';
   document.getElementById('overview-button').hidden = false;
   document.getElementById('race-car-balloon-label').textContent = '1号車→自分のチーム';
 }
@@ -609,8 +611,9 @@ addEventListener('keyup', (e) => {
 // **既存の操作(Space/R/C 等)には触れない**: chaseMode でなければ何も起きない
 addEventListener('keydown', (e) => {
   if (!chaseMode) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
   if (e.code === 'KeyV' && !e.repeat) toggleRaceView();
-  if (e.code === 'KeyB' && !e.repeat) toggleRaceOverview();
+  if ((e.code === 'KeyO' || e.code === 'KeyB') && !e.repeat) { e.preventDefault(); toggleRaceOverview(); }
 });
 
 // ---- タッチ操作ボタン(スマホ・タブレットなどタッチ端末向け) ----
@@ -1155,15 +1158,16 @@ const raceCarInput = { throttle: 0, steer: 0 };
 // 3号車: 気球の直下を常に追いかける
 let raceCar2 = null, raceCar3 = null;
 const RACE_CAR2_STANDOFF_M = 100;
-// 'orbit'(ドラッグで自由に回せる、既定) / 'chase'(車の斜め後ろに固定して近くで見る)
-let raceViewMode = 'orbit';
-const RACE_CHASE_BACK_M = 9;  // 追走視点: 車の何m後ろに置くか
-const RACE_CHASE_UP_M = 3.2;  // 追走視点: 車の床から何m上に置くか
-// 気球と車の両方を見下ろす俯瞰(B キー)。V(orbit/chase)とは別枠のオン・オフで、
+// GameTargetと同じ2視点。位置は車の後方で、Vで見る方向だけ切り替える。
+let raceViewMode = 'forward'; // 'forward' / 'balloon'
+let raceStoppedCamera = null;
+let raceOverviewCamera = null;
+const RACE_CHASE_BACK_M = 14;
+const RACE_CHASE_UP_M = 6;
+// 気球と車の両方を見下ろす俯瞰(O キー、旧Bも有効)。Vとは別枠のオン・オフで、
 // **気球が高く上がって画面から見失う**問題への対策(2026-09-06)。
 // 距離は2体の間隔に応じて自動で伸ばすので、離れるほどカメラも引く
 let raceOverview = false;
-const RACE_OVERVIEW_MIN_DIST_M = 150; // 2体が近いとき(離陸直後など)の最小距離
 const CHASE_BEST_KEY = 'chase-marker-race-best'; // 通常モードの自己ベスト(BEST_KEY)とは別に持つ
 if (chaseMode) {
   raceAutopilot = createBalloonAutopilot({ windAt, targetX: TARGET_XZ.x, targetZ: TARGET_XZ.z });
@@ -1545,7 +1549,13 @@ function spawnRaceCar(x, z) {
   if (creativeWorld) {
     addTeamLabel(raceCar.group, { text: '車', color: '#ffd166', name: 'team-car-label', width: 28 });
   }
-  placeRaceOrbitCamera();
+  raceStoppedCamera = createStoppedCamera({ camera, element: renderer.domElement,
+    canMove: () => started && !raceOverview && Math.abs(raceCar.info().speedMps) <= 0.05,
+    render: () => renderer.render(scene, camera) });
+  raceOverviewCamera = createChaseOverview({ camera, element: renderer.domElement,
+    getHeight: terrain.getHeight, isActive: () => raceOverview });
+  updateRaceControlsEnabled();
+  placeRaceFollowCamera();
 
   // 2号車・3号車(参考動作)。1号車と重ならないよう、出発点を少しずらす。
   // **視点には関与しない**(V/B は1号車と気球だけを見る、今の実装のまま)
@@ -1561,49 +1571,65 @@ function spawnRaceCar(x, z) {
   scene.add(raceCar3.group);
 }
 
-// 追走視点の切り替え(V キー、chaseMode専用)。既存の cycleOrbitTarget と同じ考え方:
-// 切り替えた瞬間だけ基準位置に置き直し(hasPrevOrbitPos=false)、以後は毎フレームの
-// delta追従(下のレンダーループ)に任せる
-function placeRaceOrbitCamera() {
+// GameTargetと同じ車の後方14m・高さ6m。地面へ潜らないよう高さを補正する。
+function placeRaceFollowCamera() {
   if (!raceCar) return;
   const c = raceCar.info();
   const head = (c.headingDeg * Math.PI) / 180;
-  const tgt = new THREE.Vector3(c.x, c.y + 1, c.z);
-  camera.position.set(
-    tgt.x - Math.sin(head) * 16 + Math.cos(head) * 6,
-    tgt.y + 7,
-    tgt.z + Math.cos(head) * 16 + Math.sin(head) * 6,
-  );
-  controls.target.copy(tgt);
-  hasPrevOrbitPos = false;
+  const x = c.x - Math.sin(head) * RACE_CHASE_BACK_M;
+  const z = c.z + Math.cos(head) * RACE_CHASE_BACK_M;
+  camera.position.set(x, Math.max(c.y + RACE_CHASE_UP_M, terrain.getHeight(x, z) + 3), z);
+  if (raceViewMode === 'balloon') camera.lookAt(state.pos.x, state.pos.y + 12, state.pos.z);
+  else camera.lookAt(c.x, c.y + 1, c.z);
 }
 function toggleRaceView() {
-  if (raceOverview) toggleRaceOverview();
-  raceViewMode = raceViewMode === 'orbit' ? 'chase' : 'orbit';
+  if (!started || !raceCar) return;
+  raceOverview = false;
+  raceStoppedCamera?.reset();
+  raceOverviewCamera?.reset();
+  raceViewMode = raceViewMode === 'forward' ? 'balloon' : 'forward';
   updateRaceControlsEnabled();
-  if (raceViewMode === 'orbit' && !raceOverview) placeRaceOrbitCamera();
+  placeRaceFollowCamera();
 }
-// B キー: 気球と車の両方を見下ろす俯瞰。V(orbit/chase)より優先して表示する
-// (下のレンダーループの camera 分岐を参照)。オン/オフの単純な切り替えで、
-// 切る前にいた orbit/chase の状態(raceViewMode)はそのまま保つ
+// O(旧Bも可)で俯瞰を切り替え、戻るときは以前の見る方向を保つ。
 function toggleRaceOverview() {
+  if (!started || !raceCar) return;
   raceOverview = !raceOverview;
+  raceStoppedCamera?.reset();
+  raceOverviewCamera?.reset();
   updateRaceControlsEnabled();
-  if (!raceOverview && raceViewMode === 'orbit') placeRaceOrbitCamera();
+  if (!raceOverview) placeRaceFollowCamera();
+  else raceOverviewCamera?.update(state.pos, raceCar.info());
 }
-// 'chase' も俯瞰(overview)も固定カメラなので、その間はドラッグを止める。
-// **どちらでもない(orbit かつ overview オフ)ときだけ** OrbitControls を有効にする
+// 画面のボタンと、俯瞰だけに出す名札を同期する。
 function updateRaceControlsEnabled() {
-  controls.enabled = !raceOverview && raceViewMode === 'orbit';
+  controls.enabled = false; // 停車中の見回しは位置固定の専用カメラで行う。
   const touchOverview = document.getElementById('tc-overview');
   touchOverview.setAttribute('aria-pressed', String(raceOverview));
-  touchOverview.textContent = raceOverview ? '車へ' : '俯瞰';
-  document.getElementById('tc-view').setAttribute('aria-label', '車の視点切替（周囲／追走）');
+  touchOverview.textContent = raceOverview ? '運転へ' : '俯瞰';
+  const viewButton = document.getElementById('tc-view');
+  viewButton.textContent = raceViewMode === 'forward' ? '気球へ' : '前方へ';
+  viewButton.setAttribute('aria-label', raceViewMode === 'forward' ? '気球を見る' : '進行方向を見る');
+  updateCreativeTeamLabels();
   if (creativeWorld) {
     const button = document.getElementById('overview-button');
-    button.textContent = raceOverview ? '車の視点へ' : '6機を見渡す';
+    button.textContent = raceOverview ? '運転に戻る(O)' : '自分のチームを俯瞰(O)';
     button.setAttribute('aria-pressed', String(raceOverview));
   }
+}
+
+function updateCreativeTeamLabels() {
+  if (!creativeWorld) return;
+  const balloonLabel = scene.getObjectByName('team-balloon-label');
+  const carLabel = scene.getObjectByName('team-car-label');
+  for (const label of [balloonLabel, carLabel]) {
+    if (!label) continue;
+    label.visible = raceOverview;
+    const leader = label.parent.getObjectByName(`${label.name}-leader`);
+    if (leader) leader.visible = false;
+    if (raceOverview) updateTeamLabel(label, camera, innerHeight);
+  }
+  if (raceOverview) separateTeamLabels(balloonLabel, carLabel, camera, innerWidth, innerHeight);
 }
 
 // 距離の表し方(1km未満はm)。状態表示と無線報告で同じ言い方にする
@@ -3794,41 +3820,11 @@ renderer.setAnimationLoop(() => {
     if (chaseMode && raceCar) {
       // ?mode=chase: 気球ではなく、プレイヤーが操縦する車にカメラを合わせる
       const c = raceCar.info();
+      if (raceOverview || Math.abs(c.speedMps) > 0.05) raceStoppedCamera?.reset();
       if (raceOverview) {
-        // B キー: 気球と車の中間点を見下ろす。気球が高く上がって見失う対策なので、
-        // 高度差も含めた3D距離で間隔を測り、離れるほどカメラも引く(ドラッグでは動かせない)
-        let midX = (state.pos.x + c.x) / 2;
-        let midY = (state.pos.y + c.y) / 2;
-        let midZ = (state.pos.z + c.z) / 2;
-        const sep = Math.hypot(state.pos.x - c.x, state.pos.y - c.y, state.pos.z - c.z);
-        let dist = Math.max(RACE_OVERVIEW_MIN_DIST_M, sep * 1.2);
-        if (creativeFleet) {
-          const points = [state.pos, new THREE.Vector3(c.x, c.y, c.z), ...creativeFleet.positions()];
-          const viewBounds = new THREE.Box3().setFromPoints(points);
-          viewBounds.max.y += 28; // 球皮まで含めて6機を画面に収める
-          const center = viewBounds.getCenter(new THREE.Vector3());
-          midX = center.x; midY = center.y; midZ = center.z;
-          dist = Math.max(RACE_OVERVIEW_MIN_DIST_M, viewBounds.getSize(new THREE.Vector3()).length() * 1.2)
-            * Math.max(1, 1 / camera.aspect);
-        }
-        camera.position.set(midX, midY + dist * 0.6, midZ + dist * 0.8);
-        camera.lookAt(midX, midY, midZ);
-      } else if (raceViewMode === 'chase') {
-        // 追走視点: 車の斜め後ろ上に固定して近くで見る(ドラッグでは動かせない)
-        const headRad = (c.headingDeg * Math.PI) / 180;
-        camera.position.set(
-          c.x - Math.sin(headRad) * RACE_CHASE_BACK_M,
-          c.y + RACE_CHASE_UP_M,
-          c.z + Math.cos(headRad) * RACE_CHASE_BACK_M,
-        );
-        camera.lookAt(c.x, c.y + 1, c.z);
-      } else {
-        // 俯瞰: 気球のときと同じ delta 追従(ドラッグ・ズームは OrbitControls に任せる)
-        const tgt = new THREE.Vector3(c.x, c.y + 1, c.z);
-        if (hasPrevOrbitPos) camera.position.add(tgt.clone().sub(prevOrbitPos));
-        controls.target.copy(tgt);
-        prevOrbitPos.copy(tgt);
-        hasPrevOrbitPos = true;
+        raceOverviewCamera.update(state.pos, c);
+      } else if (!raceStoppedCamera?.active) {
+        placeRaceFollowCamera();
       }
     } else if (fpv) {
       // ゴンドラ視点: 目の位置は気球に固定し、視線方向だけドラッグで回す。
@@ -3897,13 +3893,7 @@ renderer.setAnimationLoop(() => {
     }
   }
 
-  if (!fpv && !carView && !(chaseMode && (raceViewMode === 'chase' || raceOverview))) controls.update();
-  if (creativeWorld) {
-    updateTeamBalloonLabel(balloon.group, camera, innerHeight);
-    const carLabel = raceCar?.group.getObjectByName('team-car-label');
-    updateTeamLabel(carLabel, camera, innerHeight);
-    separateTeamLabels(balloon.group.getObjectByName('team-balloon-label'), carLabel,
-      camera, innerWidth, innerHeight);
-  }
+  if (!chaseMode && !fpv && !carView) controls.update();
+  updateCreativeTeamLabels();
   renderer.render(scene, camera);
 });
