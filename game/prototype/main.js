@@ -11,6 +11,7 @@ import { createChaseCar } from './chasecar.js';
 // フェーズ1デモ(chase/)で検証した2モジュールをそのまま使う。**気球の物理には一切触れない**
 // (バーナー/リップラインの入力を、キーボードの代わりにオートパイロットが埋めるだけ)
 import { createPlayerCar } from './playerCar.js';
+import { RECOVERY_RADIUS, groundReportStatus, chasePoints } from './chaseRules.js';
 import { createBalloonAutopilot } from './balloonAutopilot.js';
 import { carAutopilotControl } from './carAutopilot.js';
 import { loadCreativeCarModel } from './creativeCar.js';
@@ -174,7 +175,7 @@ function windAt(altM, x, z) {
 // ---- three.js セットアップ ----
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 2));
 document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -581,8 +582,8 @@ function togglePause() {
 document.getElementById('pause-btn').addEventListener('click', togglePause);
 
 addEventListener('keydown', (e) => {
-  if (e.code === 'Space') { input.burner = true; e.preventDefault(); }
-  if (e.code === 'KeyR') input.rip = true;
+  if (e.code === 'Space' && !chaseMode) { input.burner = true; e.preventDefault(); }
+  if (e.code === 'KeyR' && !chaseMode) input.rip = true;
   // Shift+V は隠しコマンド(devMode + ?road=1 で車がいるときだけ効く)。
   // **?mode=chase では V/Shift+V は別のキーハンドラ(下)に譲る**(気球ではなく車を見る操作のため)
   if (e.code === 'KeyV' && !chaseMode) { if (e.shiftKey) cycleOrbitTarget(); else toggleFpv(); }
@@ -590,8 +591,9 @@ addEventListener('keydown', (e) => {
   // (割り込む警告は出さない)。devMode + ?road=1 で車がいるときだけ効く。
   // Shift+C は隠しコマンド: 開発用の状態表示(距離・速度・幅員区分・残り区間)。
   // V / Shift+V と同じ層の分け方 — C は無線、Shift+C は「その裏の数字」
-  if (e.code === 'KeyC') { if (e.shiftKey) toggleRoadStatus(); else toggleRadio(); }
-  if (e.code === 'KeyM' && flightReady) dropMarker();
+  if (e.code === 'KeyC' && chaseMode && !e.repeat) sendGroundReport();
+  if (e.code === 'KeyC' && !chaseMode) { if (e.shiftKey) toggleRoadStatus(); else toggleRadio(); }
+  if (e.code === 'KeyM' && flightReady && !chaseMode) dropMarker();
   if (e.code === 'KeyP') togglePibal();
   // **?mode=chase では W はアクセル(下のハンドラ)に使うため、devMode の隠しコマンドと衝突させない**
   if (e.code === 'KeyW' && devMode && !chaseMode) toggleWindCalcDebug();
@@ -608,7 +610,7 @@ addEventListener('keyup', (e) => {
 });
 
 // ?mode=chase 専用のキー操作(W/S/A/D または矢印キーで車を運転、V で追走視点を切替)。
-// **既存の操作(Space/R/C 等)には触れない**: chaseMode でなければ何も起きない
+// chaseMode でなければ何も起きない
 addEventListener('keydown', (e) => {
   if (!chaseMode) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
@@ -1168,7 +1170,10 @@ const RACE_CHASE_UP_M = 6;
 // **気球が高く上がって画面から見失う**問題への対策(2026-09-06)。
 // 距離は2体の間隔に応じて自動で伸ばすので、離れるほどカメラも引く
 let raceOverview = false;
-const CHASE_BEST_KEY = 'chase-marker-race-best'; // 通常モードの自己ベスト(BEST_KEY)とは別に持つ
+const chaseRace = { finished: false, reported: false, caught: false, afterLanding: false, landingDistance: null };
+const chaseRadioLog = [];
+let chaseToastTimer = null;
+const CHASE_BEST_KEY = 'chase-marker-score-best-v1'; // 通常モードの自己ベスト(BEST_KEY)とは別に持つ
 if (chaseMode) {
   raceAutopilot = createBalloonAutopilot({ windAt, targetX: TARGET_XZ.x, targetZ: TARGET_XZ.z });
 }
@@ -1199,7 +1204,13 @@ loadingEl.style.display = '';
 const loadEl = document.getElementById('load-progress');
 const [terrain, creativeCarModel, teamBalloonModel] = await Promise.all([
   buildTerrain(AREA.lon, AREA.lat, TILE_RADIUS,
-    (done, total) => { loadEl.textContent = `${done} / ${total}`; }),
+    (done, total) => { loadEl.textContent = `${done} / ${total}`; },
+    { lowMemory: isTouchDevice, maxTextureSize: renderer.capabilities.maxTextureSize,
+      onStatus: ({ missingDem, missingPhotos }) => {
+        document.getElementById('terrain-error').hidden = !missingDem && !missingPhotos;
+        document.getElementById('terrain-error-text').textContent =
+          `地形データの一部を取得できませんでした（標高${missingDem}枚・写真${missingPhotos}枚）。未取得部分は簡易表示です。通信が戻ってから再読み込みできます。`;
+      } }),
   creativeWorld ? loadCreativeCarModel().catch((error) => {
     console.warn('創作の車両モデルを読み込めませんでした:', error);
     document.getElementById('car-model-error').hidden = false;
@@ -3404,11 +3415,126 @@ const targetGroundY = terrain.getHeight(TARGET_XZ.x, TARGET_XZ.z);
 const target = buildTarget(TARGET_XZ.x, TARGET_XZ.z, targetGroundY);
 scene.add(target);
 
+// 無線は短時間だけ表示。全文と得点はメニューから確認できる。
+function chaseRadio(message) {
+  chaseRadioLog.unshift(message);
+  chaseRadioLog.length = Math.min(chaseRadioLog.length, 8);
+  document.getElementById('chase-radio-log').textContent = chaseRadioLog.join('\n');
+  const toast = document.getElementById('chase-toast');
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(chaseToastTimer);
+  chaseToastTimer = setTimeout(() => { toast.hidden = true; }, 8000);
+}
+
+function reportStatus() {
+  const c = raceCar?.info();
+  return groundReportStatus({ active: started && !expired && !chaseRace.finished && !!c,
+    reported: chaseRace.reported,
+    distance: c ? Math.hypot(c.x - TARGET_XZ.x, c.z - TARGET_XZ.z) : Infinity,
+    speedMps: c?.speedMps });
+}
+
+function sendGroundReport() {
+  if (!chaseMode || reportStatus() !== 'ready') return;
+  const w = windAt(targetGroundY, TARGET_XZ.x, TARGET_XZ.z);
+  if (!Number.isFinite(w.dir) || !Number.isFinite(w.kt) || w.kt < 0) return;
+  chaseRace.reported = true;
+  const dir = String(((Math.round(w.dir) % 360) + 360) % 360).padStart(3, '0');
+  chaseRadio(`1号車：ターゲットの地上風 ${dir}°／${w.kt.toFixed(1)} kt。気球：了解！ 報告＋50点`);
+  updateChaseMission();
+}
+
+function updateChaseMission() {
+  const points = chasePoints(chaseRace);
+  document.getElementById('chase-score').textContent = `${points.total} 点`;
+  const status = reportStatus();
+  const messages = { reported: '地上風報告済み（＋50点）', inactive: '地上風報告は競技中に送れます',
+    'too-close': 'ターゲットから100〜400m離れて停車', 'too-far': 'ターゲットまで400m以内に進んで停車',
+    moving: '停車すると地上風を報告できます', ready: '地上風を報告できます（1回50点）' };
+  document.getElementById('chase-report-hint').textContent = messages[status];
+  document.getElementById('chase-report').disabled = status !== 'ready';
+  document.getElementById('chase-report-quick').hidden = status !== 'ready';
+  let navigation = '';
+  if (marker.state?.landed && !chaseRace.finished) {
+    const c = raceCar.info(), p = marker.state.pos;
+    const distance = Math.hypot(p.x - c.x, p.z - c.z);
+    const bearing = (Math.atan2(p.x - c.x, -(p.z - c.z)) * 180 / Math.PI + 360) % 360;
+    navigation = `回収まで ${Math.round(distance)}m · ${String(Math.round(bearing) % 360).padStart(3, '0')}°`;
+  }
+  const nav = document.getElementById('chase-recovery');
+  nav.textContent = navigation;
+  nav.hidden = !navigation;
+}
+
+function finishChase(caught, afterLanding, note) {
+  if (chaseRace.finished) return;
+  Object.assign(chaseRace, { finished: true, caught, afterLanding });
+  expired = true;
+  input.burner = input.rip = false;
+  resetRaceControls?.();
+  document.getElementById('pause-btn').disabled = true;
+  const points = chasePoints(chaseRace);
+  let best = 0;
+  try {
+    best = Number(localStorage.getItem(CHASE_BEST_KEY)) || 0;
+    if (points.total > best) localStorage.setItem(CHASE_BEST_KEY, String(points.total));
+  } catch { /* 保存できなくても結果は表示する */ }
+  document.querySelector('#result .r-title').textContent = note;
+  document.querySelector('#result .r-dist').hidden = true;
+  const landing = chaseRace.landingDistance === null ? '' : `\n着地時の車との距離 ${chaseRace.landingDistance.toFixed(1)}m`;
+  document.getElementById('result-sub').textContent =
+    `合計 ${points.total} 点\n回収 ${points.recovery} 点 ／ 地上風報告 ${points.report} 点${landing}\n自己ベスト ${Math.max(best, points.total)} 点`;
+  document.getElementById('result-sub').style.whiteSpace = 'pre-line';
+  document.getElementById('result-retry').textContent = 'もう一度走る';
+  document.getElementById('result').style.display = '';
+  document.getElementById('mobile-menu').open = false;
+  document.getElementById('marker-info').textContent = caught ? '回収済み' : '終了';
+  chaseRadio(`${note} 合計 ${points.total} 点`);
+  updateChaseMission();
+}
+
+function checkGroundRecovery() {
+  if (chaseRace.finished || !marker.state?.landed || !raceCar) return;
+  const c = raceCar.info(), p = marker.state.pos;
+  if (Math.hypot(p.x - c.x, p.z - c.z) <= RECOVERY_RADIUS) finishChase(true, true, '着地後に回収！');
+}
+
+function stepChaseFlight(dt) {
+  let w = windAt(state.pos.y, state.pos.x, state.pos.z);
+  // ×8でも着地時の車位置を古いフレームで判定しない。
+  for (let left = dt; left > 1e-9 && !chaseRace.finished;) {
+    const step = Math.min(left, 1 / 60);
+    left -= step;
+    const ctrl = raceAutopilot.control(state.pos, state.vy, step);
+    input.burner = ctrl.burner;
+    input.rip = ctrl.rip;
+    w = stepPhysics(step);
+    raceCar?.update(step, raceCarInput);
+    stepMarker(step);
+    if (chaseRace.finished) break;
+    checkGroundRecovery();
+    if (chaseRace.finished) break;
+    stepClock(step);
+    if (chaseRace.finished) break;
+    if (!expired && !state.grounded && marker.available > 0) {
+      const notice = raceAutopilot.dropNotice(state.pos);
+      if (notice !== null) chaseRadio(`気球：${notice <= 5 ? 'まもなく' : `約${Math.ceil(notice)}秒後に`}投下予定（ゲーム内時間・風で変わります）。`);
+      if (raceAutopilot.shouldDrop(state.pos)) dropMarker();
+    }
+    const p = marker.state?.pos || state.pos, map = terrain.map;
+    if (p.x < map.minX || p.z < map.minZ || p.x > map.minX + terrain.sizeMeters || p.z > map.minZ + terrain.sizeMeters) {
+      finishChase(false, false, '飛行範囲外のため終了');
+    }
+  }
+  return w;
+}
+
 // マーカーは1本。dropped後は marker.state が物理を持つ
 const marker = { available: 1, state: null, mesh: null };
 
 function dropMarker() {
-  if (marker.available <= 0 || state.grounded || expired) return;
+  if (marker.available <= 0 || state.grounded || expired || (chaseMode && chaseRace.finished)) return false;
   marker.available = 0;
   const w = windAt(state.pos.y, state.pos.x, state.pos.z);
   marker.state = {
@@ -3420,6 +3546,11 @@ function dropMarker() {
   marker.mesh.position.copy(marker.state.pos);
   scene.add(marker.mesh);
   document.getElementById('marker-info').textContent = '投下!';
+  if (chaseMode) {
+    raceAutopilot.markDropped();
+    chaseRadio('気球：マーカー投下！ 着地点へ先回りしてください。');
+  }
+  return true;
 }
 
 function stepMarker(dt) {
@@ -3445,12 +3576,22 @@ function stepMarker(dt) {
 }
 
 function onMarkerLanded(pos) {
-  // ?mode=chase では「回収レース」なので、固定ターゲットではなく**車の位置**からの距離を測る。
-  // 通常モード(JDG)はこれまでどおりターゲット中心からの距離のまま
-  const refX = (chaseMode && raceCar) ? raceCar.info().x : TARGET_XZ.x;
-  const refZ = (chaseMode && raceCar) ? raceCar.info().z : TARGET_XZ.z;
+  if (chaseMode && raceCar) {
+    if (chaseRace.finished) return;
+    const car = raceCar.info();
+    chaseRace.landingDistance = Math.hypot(pos.x - car.x, pos.z - car.z);
+    if (chaseRace.landingDistance <= RECOVERY_RADIUS) {
+      finishChase(true, false, '着地時に回収！');
+    } else {
+      chaseRadio('気球：マーカー着地。車で30m以内に近づくと回収500点です。');
+    }
+    return;
+  }
+  // 通常モード(JDG)はターゲット中心からの距離で計測する。
+  const refX = TARGET_XZ.x;
+  const refZ = TARGET_XZ.z;
   const dist = Math.hypot(pos.x - refX, pos.z - refZ);
-  // 着地点→測定基準点(ターゲット、または回収レースでは車)の計測ライン
+  // 着地点→ターゲットの計測ライン
   const lineGeo = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(pos.x, pos.y + 1, pos.z),
     new THREE.Vector3(refX, terrain.getHeight(refX, refZ) + 1, refZ),
@@ -3460,11 +3601,12 @@ function onMarkerLanded(pos) {
 }
 
 function showResult(dist, note) {
-  // 通常モード(JDG)と回収レースは自己ベストを別々に持つ(比較対象が違う数値なので混ぜない)
-  const bestKey = chaseMode ? CHASE_BEST_KEY : BEST_KEY;
-  const prev = Number(localStorage.getItem(bestKey));
+  // 通常モード(JDG)の距離記録。回収レースの得点記録とは分ける。
+  const bestKey = BEST_KEY;
+  let prev = 0;
+  try { prev = Number(localStorage.getItem(bestKey)); } catch { /* 保存不可でも競技を続ける */ }
   const isBest = !Number.isFinite(prev) || prev <= 0 || dist < prev;
-  if (isBest) localStorage.setItem(bestKey, dist.toFixed(1));
+  if (isBest) { try { localStorage.setItem(bestKey, dist.toFixed(1)); } catch { /* 任意の保存 */ } }
 
   const subs = [];
   if (note) subs.push(note);
@@ -3486,6 +3628,7 @@ function stepClock(dt) {
     expired = true;
     if (!marker.state) {
       marker.available = 0;
+      if (chaseMode) { finishChase(false, false, '時間切れ：マーカー未投下'); return; }
       // マーカーが投下されなかった場合のフォールバック計測は、通常モードと同じく
       // 「気球の現在地→ターゲット」のまま(まだ着地点が無いので車との比較はできない)
       const d = Math.hypot(state.pos.x - TARGET_XZ.x, state.pos.z - TARGET_XZ.z);
@@ -3536,6 +3679,9 @@ function stepPhysics(dt) {
   }
   return w;
 }
+
+document.getElementById('chase-report').addEventListener('click', sendGroundReport);
+document.getElementById('chase-report-quick').addEventListener('click', sendGroundReport);
 
 // ---- コンパス(カメラの向き=画面正面の磁方位。ターゲット方向をオレンジ印で表示) ----
 const compassCv = document.getElementById('compass');
@@ -3673,6 +3819,7 @@ function updateRaceHud() {
   // パイバル表と突き合わせれば「しばらくこの向きへ飛ぶ」と読める
   const cruise = raceAutopilot ? raceAutopilot.cruiseFt() : null;
   hud.raceCruise.textContent = cruise === null ? '--' : `${Math.round(cruise)} ft`;
+  updateChaseMission();
 }
 
 // ?mode=chase では、気球パイロット向けの表示(燃料・エンベロープ温度・通常の操作説明)を隠し、
@@ -3681,6 +3828,8 @@ function updateRaceHud() {
 function applyRaceHudMode() {
   if (!chaseMode) return;
   document.body.classList.add('chase-mode');
+  document.getElementById('chase-mission').hidden = false;
+  document.getElementById('chase-quick').hidden = false;
   document.getElementById('tc-flight').hidden = true;
   document.getElementById('tc-marker').hidden = true;
   document.getElementById('tc-driving').hidden = false;
@@ -3753,24 +3902,18 @@ renderer.setAnimationLoop(() => {
   // 止めていた分の経過時間がまとめて dt に乗ってしまい、カクつきや飛び越しが起きる)。
   // 止めるのは dt を 0 にするだけ(このファイル冒頭の paused の説明を参照)
   const rawDt = clock.getDelta();
-  const dt = paused ? 0 : Math.min(rawDt, 0.05) * timeScale;
+  const dt = paused || (chaseMode && chaseRace.finished) ? 0 : Math.min(rawDt, 0.05) * timeScale;
 
   if (started) {
-    // ?mode=chase: 気球の burner/rip をオートパイロットが決める。
-    // **必ず stepPhysics の前に呼ぶ**(この関数が input.burner/input.rip を書き換え、
-    // stepPhysics がそれを読んで物理を進めるため。フェーズ1デモと同じ順序)
-    if (chaseMode && raceAutopilot) {
-      const ctrl = raceAutopilot.control(state.pos, state.vy, dt);
-      input.burner = ctrl.burner;
-      input.rip = ctrl.rip;
+    let w;
+    if (chaseMode) {
+      w = stepChaseFlight(dt);
+    } else {
+      w = stepPhysics(dt);
+      stepMarker(dt);
+      stepClock(dt);
     }
-    const w = stepPhysics(dt);
-    if (creativeFleet) creativeFleet.update(dt);
-    stepMarker(dt);
-    stepClock(dt);
-    if (chaseMode && raceAutopilot && raceAutopilot.shouldDrop(state.pos)) dropMarker();
-    // プレイヤーの車(?mode=chase)。道路グラフは見ない自由走行
-    if (raceCar) raceCar.update(dt, raceCarInput);
+    if (creativeFleet && !chaseRace.finished) creativeFleet.update(dt);
     updateSounds(w.kt);
     // 2号車・3号車(参考動作)。carAutopilot.js の単純な追尾で、道路グラフは見ない
     if (raceCar2) {

@@ -39,6 +39,7 @@ export function createBalloonAutopilot({
   let cruiseFt = null;
   let sinceScan = 1e9;   // 初回は即座に選ぶ
   let dropped = false;
+  let noticeSent = false;
 
   // 現在地からターゲットへ、いちばん近い方位で運んでくれる高度を選ぶ。
   // 「方位の近さ」と「風速」の両方を見る(弱い風だと方位が合っていても進まない)
@@ -80,13 +81,32 @@ export function createBalloonAutopilot({
       return { burner, rip };
     },
 
-    // ターゲットに十分近づいたら true を一度だけ返す(以後は常に false)。
-    // 呼び出し側はこれを見て、既存の dropMarker() を呼べばよい
+    // 投下成功時だけ markDropped を呼ぶ。離陸前の拒否で投下機会を失わない。
     shouldDrop(pos) {
       if (dropped) return false;
       const d = Math.hypot(pos.x - targetX, pos.z - targetZ);
-      if (d <= dropDistM) { dropped = true; return true; }
-      return false;
+      return d <= dropDistM;
+    },
+
+    markDropped() { dropped = true; },
+
+    // 現在の風が続く場合の投下範囲への到達予測(ゲーム内秒)。
+    dropNotice(pos) {
+      if (dropped || noticeSent) return null;
+      const w = windAt(pos.y, pos.x, pos.z);
+      const x = pos.x - targetX, z = pos.z - targetZ;
+      const c = x * x + z * z - dropDistM * dropDistM;
+      let seconds = 0;
+      if (c > 0) {
+        const a = w.vx * w.vx + w.vz * w.vz;
+        const b = x * w.vx + z * w.vz;
+        const disc = b * b - a * c;
+        if (a <= 0 || b >= 0 || disc < 0) return null;
+        seconds = c / (-b + Math.sqrt(disc));
+      }
+      if (!Number.isFinite(seconds) || seconds > 60) return null;
+      noticeSent = true;
+      return seconds;
     },
 
     cruiseFt: () => cruiseFt,

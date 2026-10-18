@@ -2,6 +2,7 @@
 //   標高: dem_png (DEM10B) z13 … 標高 = (R*65536 + G*256 + B) * 0.01m
 //   質感: seamlessphoto(全国最新写真) z14 を 2x2 枚合成して各タイルに貼る
 import * as THREE from 'three';
+import { createTileLoader } from './tileLoader.js';
 
 const DEM_Z = 13;
 const PHOTO_Z = 14;
@@ -16,10 +17,10 @@ export function lonLatToTile(lon, lat, z) {
   return { x, y };
 }
 
-async function fetchBitmap(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`tile fetch failed: ${res.status} ${url}`);
-  return createImageBitmap(await res.blob());
+function disposePhotoTexture(tex) {
+  if (!tex) return;
+  tex.dispose();
+  tex.image.width = tex.image.height = 1;
 }
 
 function decodeDem(bitmap) {
@@ -42,7 +43,12 @@ function decodeDem(bitmap) {
 
 // centerLon/Lat を原点に、(2*radius+1)^2 枚の DEM タイルで地形グループを作る。
 // 戻り値: { group, getHeight(x,z), tileMeters, sizeMeters }
-export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
+export async function buildTerrain(centerLon, centerLat, radius, onProgress, options = {}) {
+  const lowMemory = options.lowMemory ?? matchMedia('(pointer: coarse)').matches;
+  const maxTextureSize = Math.min(options.maxTextureSize ?? 4096, lowMemory ? 1024 : 4096);
+  const fetchBitmap = createTileLoader({ concurrency: lowMemory ? 4 : 8 });
+  let missingDem = 0, missingPhotos = 0;
+  const notifyStatus = () => options.onStatus?.({ missingDem, missingPhotos });
   const c = lonLatToTile(centerLon, centerLat, DEM_Z);
   const latRad = (centerLat * Math.PI) / 180;
   // メルカトルの緯度伸長を打ち消して「実距離のメートル」で組む
@@ -64,10 +70,12 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
   await Promise.all(coords.map(async ([tx, ty]) => {
     try {
       const bmp = await fetchBitmap(`https://cyberjapandata.gsi.go.jp/xyz/dem_png/${DEM_Z}/${tx}/${ty}.png`);
-      demTiles.set(`${tx}_${ty}`, decodeDem(bmp));
+      try { demTiles.set(`${tx}_${ty}`, decodeDem(bmp)); } finally { bmp.close(); }
     } catch {
       // 海上などタイルが存在しない場所は標高0の平面にする
       demTiles.set(`${tx}_${ty}`, new Float32Array(TILE_PX * TILE_PX));
+      missingDem++;
+      notifyStatus();
     }
     tick();
   }));
@@ -145,20 +153,24 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
 
     // テクスチャは後追いで貼る(z14 写真タイル 2x2 → 512px キャンバス)。
     // 先に高解像度版が適用済みなら低解像度で上書きしない
-    loadPhotoTexture(tx, ty).then((tex) => {
+    loadPhotoTexture(tx, ty, fetchBitmap).then((tex) => {
       if (!entry.hiApplied) {
+        disposePhotoTexture(mat.map);
         mat.map = tex;
         mat.color.set(0xffffff);
         mat.needsUpdate = true;
-      }
+      } else disposePhotoTexture(tex);
       tick();
-    }).catch(() => tick());
+    }).catch(() => {
+      if (!entry.hiApplied) { entry.missingPhoto = true; missingPhotos++; notifyStatus(); }
+      tick();
+    });
   }
 
   // --- 低高度向け高解像度テクスチャ(z16 ≒ 2m/px)への段階アップグレード ---
-  const HIRES_Z = 16;
+  const HIRES_Z = Math.min(16, DEM_Z + Math.floor(Math.log2(maxTextureSize / TILE_PX)));
   const HIRES_RADIUS = 3000; // この距離内のタイルを対象(m)
-  const HIRES_MAX = 12;      // メモリ保護のための上限枚数
+  const HIRES_MAX = lowMemory ? 4 : 12;
   let hiCount = 0;
   let upgradingCount = 0;
 
@@ -168,16 +180,19 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
     const cvs = document.createElement('canvas');
     cvs.width = cvs.height = f * TILE_PX;
     const cctx = cvs.getContext('2d');
-    await Promise.all(Array.from({ length: f * f }, (_, k) => {
+    const results = await Promise.allSettled(Array.from({ length: f * f }, (_, k) => {
       const dx = k % f, dy = Math.floor(k / f);
       return fetchBitmap(
         `https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/${z}/${entry.tx * f + dx}/${entry.ty * f + dy}.jpg`)
-        .then((bmp) => cctx.drawImage(bmp, dx * TILE_PX, dy * TILE_PX))
-        .catch(() => {});
+        .then((bmp) => { try { cctx.drawImage(bmp, dx * TILE_PX, dy * TILE_PX); } finally { bmp.close(); } });
     }));
+    if (results.some(result => result.status === 'rejected')) {
+      cvs.width = cvs.height = 1;
+      throw new Error('写真の一部を取得できなかったため、現在の解像度を維持します');
+    }
     const tex = new THREE.CanvasTexture(cvs);
     tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 8;
+    tex.anisotropy = lowMemory ? 2 : 4;
     return tex;
   }
 
@@ -185,18 +200,23 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
     const tex = await buildPhotoTex(entry, HIRES_Z);
     const old = entry.mat.map;
     entry.hiApplied = true;
+    if (entry.missingPhoto) { entry.missingPhoto = false; missingPhotos--; notifyStatus(); }
     entry.mat.map = tex;
     entry.mat.color.set(0xffffff);
     entry.mat.needsUpdate = true;
-    if (old) old.dispose();
+    disposePhotoTexture(old);
   }
 
-  function startUpgrade(entry, force) {
-    if (!entry || entry.level || (!force && hiCount >= HIRES_MAX)) return;
+  function startUpgrade(entry) {
+    if (!entry || entry.level || hiCount >= HIRES_MAX || performance.now() < (entry.retryAfter || 0)) return;
     entry.level = 1;
     hiCount++;
     upgradingCount++;
-    upgradeTile(entry).finally(() => { upgradingCount--; });
+    upgradeTile(entry).catch(() => {
+      entry.level = 0;
+      entry.retryAfter = performance.now() + 60000;
+      hiCount--;
+    }).finally(() => { upgradingCount--; });
   }
 
   // 毎秒程度呼ばれ、指定位置に最も近い未処理タイルを1枚ずつ上げていく
@@ -204,7 +224,7 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
     if (upgradingCount > 0) return;
     let best = null, bestD = Infinity;
     for (const t of tileEntries) {
-      if (t.level) continue;
+      if (t.level || performance.now() < (t.retryAfter || 0)) continue;
       const d = Math.hypot(t.cx - x, t.cz - z);
       if (d < bestD) { bestD = d; best = t; }
     }
@@ -225,6 +245,7 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
   let ultraLoading = false;
 
   async function requestUltra(x, z) {
+    if (lowMemory || maxTextureSize < 4096) return;
     const dbg = document.documentElement.dataset; // デバッグ確認用(あとで消す)
     if (ultraLoading) { dbg.ultraState = 'loading'; return; }
     const h = tileMeters / 2;
@@ -232,7 +253,8 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
       (t) => Math.abs(x - t.cx) <= h && Math.abs(t.cz - z) <= h);
     if (!entry) { dbg.ultraState = 'no-entry'; return; }
     if (entry === ultraEntry) { dbg.ultraState = 'already'; return; }
-    if (!entry.hiApplied) { dbg.ultraState = 'wait-z16'; startUpgrade(entry, true); return; } // 先にz16を確保
+    if (!entry.hiApplied) { dbg.ultraState = 'wait-z16'; startUpgrade(entry); return; }
+    if (performance.now() < (entry.ultraRetryAfter || 0)) return;
     dbg.ultraState = 'building';
     ultraLoading = true;
     try {
@@ -240,7 +262,7 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
       if (ultraEntry) { // 前のz17タイルをz16に戻す
         ultraEntry.mat.map = ultraEntry.baseTex;
         ultraEntry.mat.needsUpdate = true;
-        ultraEntry.ultraTex.dispose();
+        disposePhotoTexture(ultraEntry.ultraTex);
         ultraEntry.ultraTex = null;
         ultraEntry.baseTex = null;
       }
@@ -250,6 +272,9 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
       entry.mat.needsUpdate = true;
       ultraEntry = entry;
       document.documentElement.dataset.ultraTile = `${entry.tx}/${entry.ty}`; // デバッグ確認用
+    } catch {
+      entry.ultraRetryAfter = performance.now() + 60000;
+      dbg.ultraState = 'retry-later';
     } finally {
       ultraLoading = false;
     }
@@ -268,16 +293,20 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress) {
   };
 }
 
-async function loadPhotoTexture(tx, ty) {
+async function loadPhotoTexture(tx, ty, fetchBitmap) {
   const cv = document.createElement('canvas');
   cv.width = 512;
   cv.height = 512;
   const ctx = cv.getContext('2d');
-  await Promise.all([0, 1].flatMap((dy) => [0, 1].map(async (dx) => {
+  const results = await Promise.allSettled([0, 1].flatMap((dy) => [0, 1].map(async (dx) => {
     const bmp = await fetchBitmap(
       `https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/${PHOTO_Z}/${tx * 2 + dx}/${ty * 2 + dy}.jpg`);
-    ctx.drawImage(bmp, dx * 256, dy * 256);
+    try { ctx.drawImage(bmp, dx * 256, dy * 256); } finally { bmp.close(); }
   })));
+  if (results.some(result => result.status === 'rejected')) {
+    cv.width = cv.height = 1;
+    throw new Error('写真タイルを取得できませんでした');
+  }
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;

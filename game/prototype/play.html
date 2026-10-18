@@ -396,6 +396,29 @@
   .creative-world #setup-link, .creative-world #howto-link, .creative-world .mode-separator { display: none; }
   #creative-note { color: #b9cec4; margin-top: 6px; max-width: 320px; line-height: 1.6; }
   #loading .logo { font-size: clamp(22px, 5vw, 36px); letter-spacing: .08em; }
+  #chase-mission { margin-top: 8px; font-size: 12px; }
+  #chase-mission p { margin: 6px 0; line-height: 1.6; }
+  #chase-radio-log { white-space: pre-line; max-height: 160px; overflow-y: auto; }
+  #chase-mission button, #chase-report-quick {
+    background: #172a36; color: #b9edff; border: 1px solid #5895af;
+    border-radius: 8px; padding: 10px 12px; cursor: pointer; font: inherit;
+  }
+  #chase-mission button:disabled { opacity: .5; cursor: default; }
+  #chase-quick {
+    position: fixed; top: 82px; left: 12px; z-index: 4;
+    max-width: min(360px, calc(100vw - 24px)); pointer-events: none; font-size: 12px; color: #e9f6ff;
+  }
+  #chase-quick > :not([hidden]) {
+    display: block; margin-bottom: 6px; padding: 8px 10px;
+    background: rgba(10, 23, 32, .85); border-radius: 8px; line-height: 1.5;
+  }
+  #chase-report-quick { pointer-events: auto; min-height: 44px; }
+  #chase-recovery { color: #ffd54f; }
+  @media (pointer: coarse) {
+    #chase-quick { top: max(12px, env(safe-area-inset-top)); max-width: calc(100vw - 138px); font-size: 11px; }
+    #chase-quick > :not([hidden]) { padding: 6px 8px; }
+    #chase-radio-log { max-height: 110px; }
+  }
 </style>
 </head>
 <body>
@@ -739,6 +762,21 @@
   </nav>
   <p id="car-model-error" role="status" hidden>車両モデルを読み込めなかったため、標準の車で開始しました。再読み込みで再試行できます。</p>
   <p id="balloon-model-error" role="status" hidden>チームの気球モデルを読み込めなかったため、「自分のチーム」の目印が付いた標準の気球を使っています。</p>
+  <p id="terrain-error" role="status" hidden><span id="terrain-error-text"></span> <a href="" id="terrain-reload">再読み込み（最初から）</a></p>
+  <details id="chase-mission" hidden>
+    <summary>回収ミッション · <strong id="chase-score">0 点</strong></summary>
+    <p>ターゲットから100〜400mの場所で停車し、地上風を報告すると50点（1回）。<br>自分の気球が自動で投下します。着地時に車が30m以内なら1,000点。間に合わなくても、着地後に30m以内へ近づくと500点です。</p>
+    <p>制限時間30分以内に投下。投下済みなら時間切れ後も回収できます。地上風はゲーム内の風で、無線は文字で表示します。</p>
+    <button id="chase-report" type="button" disabled>地上風を報告（C）</button>
+    <p id="chase-report-hint">ターゲット付近で停車してください</p>
+    <details><summary>無線の記録</summary><p id="chase-radio-log">まだ通信はありません</p></details>
+  </details>
+</div>
+
+<div id="chase-quick" hidden>
+  <div id="chase-toast" role="status" aria-live="polite" hidden></div>
+  <button id="chase-report-quick" type="button" hidden>地上風を報告 ＋50点</button>
+  <div id="chase-recovery" hidden></div>
 </div>
 
 <details id="mobile-menu" hidden>
