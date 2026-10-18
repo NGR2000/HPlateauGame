@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createBalloonAutopilot } from './balloonAutopilot.js';
+import { addTeamLabel, updateTeamLabel } from './teamLabels.js';
 
 export async function loadTeamBalloonModel() {
   const { scene } = await new GLTFLoader().loadAsync(
@@ -12,44 +13,11 @@ export async function loadTeamBalloonModel() {
 
 export function markTeamBalloon(group) {
   group.name = 'creative-team-balloon';
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#083e4e';
-  ctx.beginPath();
-  ctx.roundRect(4, 4, 504, 120, 22);
-  ctx.fill();
-  ctx.strokeStyle = '#8cf4e8';
-  ctx.lineWidth = 5;
-  ctx.stroke();
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.font = 'bold 38px "Yu Gothic UI", sans-serif';
-  ctx.fillText('自分のチーム', 256, 54);
-  ctx.font = '26px sans-serif';
-  ctx.fillStyle = '#9bf2e7';
-  ctx.fillText('MV56b', 256, 98);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const label = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: texture, depthTest: false, depthWrite: false, sizeAttenuation: false,
-  }));
-  label.name = 'team-balloon-label';
-  const height = new THREE.Box3().setFromObject(group).max.y;
-  label.userData.envelopeTop = height;
-  label.position.y = height + 5;
-  label.scale.set(0.22, 0.055, 1);
-  label.renderOrder = 20;
-  group.add(label);
+  addTeamLabel(group, { text: '気球', color: '#70ddff', name: 'team-balloon-label', width: 42 });
 }
 
-export function updateTeamBalloonLabel(group, camera) {
-  const label = group.getObjectByName('team-balloon-label');
-  if (!label) return;
-  // 画面上で一定サイズの札が、遠景でも球皮を覆わない高さに置く。
-  const distance = camera.position.distanceTo(group.position);
-  label.position.y = label.userData.envelopeTop + 3 + distance * 0.035;
+export function updateTeamBalloonLabel(group, camera, viewportHeight) {
+  updateTeamLabel(group.getObjectByName('team-balloon-label'), camera, viewportHeight);
 }
 
 export function createTeamBalloon(model) {

@@ -16,6 +16,7 @@ import { carAutopilotControl } from './carAutopilot.js';
 import { loadCreativeCarModel } from './creativeCar.js';
 import { balloonSoundMix } from './balloonAudio.js';
 import { holdButton, bindCarControls } from './touchControls.js';
+import { addTeamLabel, updateTeamLabel, separateTeamLabels } from './teamLabels.js';
 import { loadTeamBalloonModel, createTeamBalloon, markTeamBalloon, updateTeamBalloonLabel, createCreativeFleet } from './creativeBalloons.js';
 
 // 創作の入口は同じ場所・風・チェイスモードから始める。
@@ -1541,6 +1542,9 @@ function spawnRaceCar(x, z) {
   scene.add(raceCar.group);
   // 上空から見つけるための60mの柱は、自分で操縦している車には要らないので消しておく
   raceCar.setMarkVisible(false);
+  if (creativeWorld) {
+    addTeamLabel(raceCar.group, { text: '車', color: '#ffd166', name: 'team-car-label', width: 28 });
+  }
   placeRaceOrbitCamera();
 
   // 2号車・3号車(参考動作)。1号車と重ならないよう、出発点を少しずらす。
@@ -3894,6 +3898,12 @@ renderer.setAnimationLoop(() => {
   }
 
   if (!fpv && !carView && !(chaseMode && (raceViewMode === 'chase' || raceOverview))) controls.update();
-  if (creativeWorld) updateTeamBalloonLabel(balloon.group, camera);
+  if (creativeWorld) {
+    updateTeamBalloonLabel(balloon.group, camera, innerHeight);
+    const carLabel = raceCar?.group.getObjectByName('team-car-label');
+    updateTeamLabel(carLabel, camera, innerHeight);
+    separateTeamLabels(balloon.group.getObjectByName('team-balloon-label'), carLabel,
+      camera, innerWidth, innerHeight);
+  }
   renderer.render(scene, camera);
 });
