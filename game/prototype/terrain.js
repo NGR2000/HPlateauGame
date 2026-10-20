@@ -44,6 +44,7 @@ function decodeDem(bitmap) {
 // centerLon/Lat を原点に、(2*radius+1)^2 枚の DEM タイルで地形グループを作る。
 // 戻り値: { group, getHeight(x,z), tileMeters, sizeMeters }
 export async function buildTerrain(centerLon, centerLat, radius, onProgress, options = {}) {
+  const imagery = options.imagery !== false;
   const lowMemory = options.lowMemory ?? matchMedia('(pointer: coarse)').matches;
   const maxTextureSize = Math.min(options.maxTextureSize ?? 4096, lowMemory ? 1024 : 4096);
   const fetchBitmap = createTileLoader({ concurrency: lowMemory ? 4 : 8 });
@@ -63,7 +64,7 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress, opt
     for (let tx = cx - radius; tx <= cx + radius; tx++) coords.push([tx, ty]);
 
   let done = 0;
-  const total = coords.length * 2; // DEM + テクスチャ
+  const total = coords.length * (imagery ? 2 : 1); // DEM + テクスチャ
   const tick = () => { done++; if (onProgress) onProgress(done, total); };
 
   // --- DEM 読み込み(全タイル揃えてから頂点を張ると継ぎ目が出ない) ---
@@ -141,7 +142,7 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress, opt
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeVertexNormals();
 
-    const mat = new THREE.MeshLambertMaterial({ color: 0x8a9a8a });
+    const mat = new THREE.MeshLambertMaterial({ color: imagery ? 0x8a9a8a : 0x9bb288 });
     group.add(new THREE.Mesh(geo, mat));
 
     const entry = {
@@ -153,7 +154,7 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress, opt
 
     // テクスチャは後追いで貼る(z14 写真タイル 2x2 → 512px キャンバス)。
     // 先に高解像度版が適用済みなら低解像度で上書きしない
-    loadPhotoTexture(tx, ty, fetchBitmap).then((tex) => {
+    if (imagery) loadPhotoTexture(tx, ty, fetchBitmap).then((tex) => {
       if (!entry.hiApplied) {
         disposePhotoTexture(mat.map);
         mat.map = tex;
@@ -208,6 +209,7 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress, opt
   }
 
   function startUpgrade(entry) {
+    if (!imagery) return;
     if (!entry || entry.level || hiCount >= HIRES_MAX || performance.now() < (entry.retryAfter || 0)) return;
     entry.level = 1;
     hiCount++;
@@ -221,6 +223,7 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress, opt
 
   // 毎秒程度呼ばれ、指定位置に最も近い未処理タイルを1枚ずつ上げていく
   function updateDetail(x, z) {
+    if (!imagery) return;
     if (upgradingCount > 0) return;
     let best = null, bestD = Infinity;
     for (const t of tileEntries) {
@@ -245,6 +248,7 @@ export async function buildTerrain(centerLon, centerLat, radius, onProgress, opt
   let ultraLoading = false;
 
   async function requestUltra(x, z) {
+    if (!imagery) return;
     if (lowMemory || maxTextureSize < 4096) return;
     const dbg = document.documentElement.dataset; // デバッグ確認用(あとで消す)
     if (ultraLoading) { dbg.ultraState = 'loading'; return; }

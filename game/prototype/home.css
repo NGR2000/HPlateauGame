@@ -7,6 +7,9 @@ header { margin-bottom: 36px; }
 h1 { font-size: clamp(30px, 5vw, 48px); letter-spacing: .05em; margin: 18px 0; font-weight: 600; }
 .intro { line-height: 1.9; color: #617068; font-size: 15px; }
 .worlds { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.creative-entry { min-width: 0; }
+.edit-city-link { display: block; text-align: center; color: #687c70; font-size: 12px; padding: 12px; text-underline-offset: 4px; }
+.world.real { align-self: start; }
 .world { display: block; color: inherit; text-decoration: none; border: 1px solid #d9dfd6; border-radius: 18px; overflow: hidden; background: #fffef9; transition: transform .18s, box-shadow .18s; }
 .world:hover { transform: translateY(-4px); box-shadow: 0 14px 32px #233d3614; }
 .world:focus-visible { outline: 3px solid #376f5a; outline-offset: 5px; }

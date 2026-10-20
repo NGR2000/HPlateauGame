@@ -21,10 +21,16 @@ import { addTeamLabel, updateTeamLabel, separateTeamLabels } from './teamLabels.
 import { createStoppedCamera } from './stoppedCamera.js';
 import { createChaseOverview } from './chaseOverview.js';
 import { loadTeamBalloonModel, createTeamBalloon, markTeamBalloon, createCreativeFleet } from './creativeBalloons.js';
+import { loadCity, creativeLaunch, CATALOG } from './cityLayout.js';
+import { loadCityModels, createCityView, buildingBlocks } from './cityView.js';
+import { createTeamPilot, segmentViolation } from './creativeAirspace.js';
 
 // 創作の入口は同じ場所・風・チェイスモードから始める。
 // 共有URLの実在世界向け設定が混ざっても、この舞台を移動させない。
 const creativeWorld = new URLSearchParams(location.search).get('world') === 'creative';
+const savedCity = creativeWorld ? loadCity() : null;
+const creativeCity = savedCity?.city;
+let creativeCityView = null, creativeAirspace = null;
 if (creativeWorld) {
   history.replaceState(null, '', `${location.pathname}?world=creative&mode=chase`);
   document.title = '創作の世界 — 佐賀・嘉瀬川';
@@ -1202,10 +1208,10 @@ document.getElementById('load-title').textContent =
 loadingEl.style.display = '';
 
 const loadEl = document.getElementById('load-progress');
-const [terrain, creativeCarModel, teamBalloonModel] = await Promise.all([
+const [terrain, creativeCarModel, teamBalloonModel, cityModels] = await Promise.all([
   buildTerrain(AREA.lon, AREA.lat, TILE_RADIUS,
     (done, total) => { loadEl.textContent = `${done} / ${total}`; },
-    { lowMemory: isTouchDevice, maxTextureSize: renderer.capabilities.maxTextureSize,
+    { imagery: !creativeWorld, lowMemory: isTouchDevice, maxTextureSize: renderer.capabilities.maxTextureSize,
       onStatus: ({ missingDem, missingPhotos }) => {
         document.getElementById('terrain-error').hidden = !missingDem && !missingPhotos;
         document.getElementById('terrain-error-text').textContent =
@@ -1221,8 +1227,25 @@ const [terrain, creativeCarModel, teamBalloonModel] = await Promise.all([
     document.getElementById('balloon-model-error').hidden = false;
     return null;
   }) : null,
+  creativeWorld ? loadCityModels(message => {
+    document.getElementById('city-load-warning').textContent = message;
+  }) : null,
 ]);
 scene.add(terrain.group);
+if (creativeWorld) {
+  creativeCityView = createCityView(creativeCity, terrain.getHeight, cityModels);
+  creativeCityView.pzGroup.visible = false;
+  scene.add(creativeCityView.group);
+  creativeAirspace = { ceiling: creativeCity.ceiling, zones: creativeCityView.zones };
+  raceAutopilot = createTeamPilot({ windAt, airspace: creativeAirspace,
+    getHeight: terrain.getHeight, onRadio: chaseRadio });
+  document.getElementById('creative-airspace').hidden = false;
+  document.getElementById('creative-altitude').textContent =
+    `最高高度：海抜 ${creativeCity.ceiling}m / ${Math.round(creativeCity.ceiling*M2FT)}ft（気球の上端まで）`;
+  if (savedCity.warning) document.getElementById('city-load-warning').textContent = savedCity.warning;
+  document.getElementById('creative-zone-list').textContent = creativeAirspace.zones.map(z =>
+    `${z.name}：${z.type==='yellow'?'離着陸禁止':`${Math.round(z.altitude)}m MSL ${z.type==='red'?'未満を禁止':'超を禁止'}`}`).join(' ／ ');
+}
 loadingEl.remove();
 
 // ---- ブリーフィング(タスクシート+パイバル編集+離陸地点選択) ----
@@ -1550,9 +1573,14 @@ function spawnRaceCar(x, z) {
     maxZ: tm.minZ + tm.n * terrain.tileMeters,
   };
   raceCar = createPlayerCar({
-    getHeight: terrain.getHeight, startX: x, startZ: z, bounds,
+    // Park beside the balloon so its basket does not overlap the car at takeoff.
+    getHeight: terrain.getHeight,
+    startX: x + (creativeWorld ? 18*Math.cos(25*Math.PI/180) : 0),
+    startZ: z + (creativeWorld ? 18*Math.sin(25*Math.PI/180) : 0), bounds,
     bodyColor: 0xffb300, markColor: 0x00e5ff,
     bodyModel: creativeCarModel,
+    headingDeg: creativeWorld ? 25 : 0,
+    isBlocked: creativeWorld ? (x,z) => buildingBlocks(creativeCity,x,z) : null,
   });
   scene.add(raceCar.group);
   // 上空から見つけるための60mの柱は、自分で操縦している車には要らないので消しておく
@@ -3368,6 +3396,7 @@ function updateFlightWindCalcDebug(appliedW) {
 // ターゲットから見て風上側 約3kmに置き、そのまま飛べば自然と
 // ターゲット付近へ流れていくようにする(巡航高度の目安として1500ft付近の風を採用)。
 function defaultLaunchPoint() {
+  if (creativeWorld) return creativeLaunch();
   const w = windAt(1500 / M2FT);
   const spd = Math.hypot(w.vx, w.vz) || 1;
   const dist = 3000;
@@ -3399,7 +3428,7 @@ function startFlight(x, z) {
     // 自分のチームは車と同じ離陸地点から出発し、周囲の5機は上空を飛ぶ。
     const tm = terrain.map;
     creativeFleet = createCreativeFleet({ startX: x, startZ: z,
-      getHeight: terrain.getHeight, windAt,
+      getHeight: terrain.getHeight, windAt, airspace: creativeAirspace,
       bounds: { minX: tm.minX, minZ: tm.minZ,
         maxX: tm.minX + tm.n * terrain.tileMeters,
         maxZ: tm.minZ + tm.n * terrain.tileMeters } });
@@ -3506,10 +3535,25 @@ function stepChaseFlight(dt) {
   for (let left = dt; left > 1e-9 && !chaseRace.finished;) {
     const step = Math.min(left, 1 / 60);
     left -= step;
-    const ctrl = raceAutopilot.control(state.pos, state.vy, step);
+    const ctrl = raceAutopilot.control(state.pos, state.vy, step, state.heat);
+    if (creativeWorld && ctrl.blocked) {
+      finishChase(false, false, '安全な飛行経路が見つからないためフライトを終了');
+      break;
+    }
     input.burner = ctrl.burner;
     input.rip = ctrl.rip;
+    const previous = creativeWorld ? { ...state.pos, vy: state.vy, heat: state.heat, fuel: state.fuel, grounded: state.grounded } : null;
     w = stepPhysics(step);
+    if (creativeWorld) {
+      const violation = segmentViolation(previous, state.pos, creativeAirspace, terrain.getHeight);
+      if (violation) {
+        // Stop the game at the last valid state, never clamp/teleport through a PZ.
+        state.pos.set(previous.x,previous.y,previous.z);
+        Object.assign(state,{vy:previous.vy,heat:previous.heat,fuel:previous.fuel,grounded:previous.grounded});
+        finishChase(false, false, `${violation}への進入を防ぐためフライトを終了`);
+        break;
+      }
+    }
     raceCar?.update(step, raceCarInput);
     stepMarker(step);
     if (chaseRace.finished) break;
@@ -3820,6 +3864,32 @@ function updateRaceHud() {
   const cruise = raceAutopilot ? raceAutopilot.cruiseFt() : null;
   hud.raceCruise.textContent = cruise === null ? '--' : `${Math.round(cruise)} ft`;
   updateChaseMission();
+  if (creativeWorld && document.getElementById('creative-airspace').open) drawCityMap();
+}
+
+function drawCityMap() {
+  const cv=document.getElementById('city-map'),ctx=cv.getContext('2d');
+  const lp=creativeLaunch(),c=raceCar.info();
+  const points=[lp,state.pos,{x:c.x,z:c.z},{x:0,z:0},...creativeCity.items];
+  const minX=Math.min(...points.map(p=>p.x))-300,maxX=Math.max(...points.map(p=>p.x))+300;
+  const minZ=Math.min(...points.map(p=>p.z))-300,maxZ=Math.max(...points.map(p=>p.z))+300;
+  const scale=Math.min(cv.width/(maxX-minX),cv.height/(maxZ-minZ));
+  const px=x=>(x-(minX+maxX)/2)*scale+cv.width/2,pz=z=>(z-(minZ+maxZ)/2)*scale+cv.height/2;
+  ctx.fillStyle='#273e36';ctx.fillRect(0,0,cv.width,cv.height);
+  for (const item of creativeCity.items) {
+    const spec=CATALOG[item.type];ctx.fillStyle=item.type==='park'?'#749a69':item.type==='road'?'#87958a':'#c9c0a2';
+    ctx.save();ctx.translate(px(item.x),pz(item.z));ctx.rotate(-item.rotation*Math.PI/180);
+    const w=Math.max(2,spec.width*item.scale*scale),d=Math.max(2,(item.length||spec.depth)*item.scale*scale);
+    ctx.fillRect(-w/2,-d/2,w,d);ctx.restore();
+  }
+  for (const z of creativeAirspace.zones) {
+    ctx.strokeStyle=z.type==='red'?'#e67d67':z.type==='blue'?'#74b1ee':'#dfc16d';
+    ctx.beginPath();ctx.arc(px(z.x),pz(z.z),z.radius*scale,0,Math.PI*2);ctx.stroke();
+  }
+  for (const [p,color,r] of [[lp,'#d7b265',3],[{x:0,z:0},'#fffef2',5],[state.pos,'#65dcf0',4],[c,'#ffd167',3]]) {
+    ctx.fillStyle=color;ctx.beginPath();ctx.arc(px(p.x),pz(p.z),r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.fillStyle='#fff';ctx.font='11px sans-serif';ctx.fillText(`気球：海抜${Math.round(state.pos.y)}m / 対地${Math.round(state.pos.y-terrain.getHeight(state.pos.x,state.pos.z))}m`,9,18);
 }
 
 // ?mode=chase では、気球パイロット向けの表示(燃料・エンベロープ温度・通常の操作説明)を隠し、

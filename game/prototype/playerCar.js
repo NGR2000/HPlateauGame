@@ -88,7 +88,7 @@ function buildPlayerCarMesh(bodyColor = 0xffb300, markColor = 0x00e5ff, bodyMode
  * @returns {{group:THREE.Group, update:Function, info:Function}}
  */
 export function createPlayerCar({
-  getHeight, startX = 0, startZ = 0, bounds = null, bodyColor = 0xffb300, markColor = 0x00e5ff, headingDeg = 0, bodyModel = null,
+  getHeight, startX = 0, startZ = 0, bounds = null, bodyColor = 0xffb300, markColor = 0x00e5ff, headingDeg = 0, bodyModel = null, isBlocked = null,
 }) {
   const group = buildPlayerCarMesh(bodyColor, markColor, bodyModel);
 
@@ -154,8 +154,16 @@ export function createPlayerCar({
     }
 
     // 位置更新(前進方向は (sinθ, -cosθ)。chasecar.js と同じ座標系)
-    car.x += Math.sin(car.heading) * car.speed * dt;
-    car.z += -Math.cos(car.heading) * car.speed * dt;
+    const nextX = car.x + Math.sin(car.heading) * car.speed * dt;
+    const nextZ = car.z - Math.cos(car.heading) * car.speed * dt;
+    // Buildings stop the car; roads never constrain its route.
+    const segments = Math.max(1, Math.ceil(Math.hypot(nextX-car.x,nextZ-car.z)/2));
+    let blocked = false;
+    for (let i=1;isBlocked && i<=segments;i++) {
+      if (isBlocked(car.x+(nextX-car.x)*i/segments,car.z+(nextZ-car.z)*i/segments)) {blocked=true;break;}
+    }
+    if (blocked) car.speed = 0;
+    else {car.x=nextX;car.z=nextZ;}
     clampToBounds();
 
     // 見た目の向きはなめらかに追従(急なハンドル操作でもカクつかせない)

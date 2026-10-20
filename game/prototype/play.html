@@ -754,7 +754,15 @@
   </details>
   <a id="setup-link" href="#">本格モード</a>
   <span class="mode-separator">/</span> <a id="howto-link" href="#">使い方</a>
-  <p id="creative-flight-info" hidden>自分のチーム：MV56b · 合計6機が自動飛行</p>
+  <p id="creative-flight-info" hidden>自分のチーム：MV56b · チームのパイロットと5機の気球</p>
+  <details id="creative-airspace" hidden>
+    <summary>街の地図・飛行区域</summary>
+    <p id="creative-altitude"></p>
+    <canvas id="city-map" width="320" height="260" style="width:100%;max-width:320px;border-radius:5px" aria-label="街、PZ、気球と車の位置"></canvas>
+    <p style="font-size:11px">赤：低空禁止 ／ 黄：離着陸禁止 ／ 青：高空禁止<br>水色：自分の気球 ／ 黄色：車 ／ 白：ターゲット<br>シミュレーション用の飛行情報・プレイ中有効</p>
+    <div id="creative-zone-list" style="font-size:11px"></div>
+    <p id="city-load-warning" role="status"></p>
+  </details>
   <button id="overview-button" type="button" aria-pressed="true" hidden>車の視点へ</button>
   <nav id="world-nav" aria-label="世界の移動">
     <span id="world-name">実際のデータの世界</span>
@@ -765,7 +773,7 @@
   <p id="terrain-error" role="status" hidden><span id="terrain-error-text"></span> <a href="" id="terrain-reload">再読み込み（最初から）</a></p>
   <details id="chase-mission" hidden>
     <summary>回収ミッション · <strong id="chase-score">0 点</strong></summary>
-    <p>ターゲットから100〜400mの場所で停車し、地上風を報告すると50点（1回）。<br>自分の気球が自動で投下します。着地時に車が30m以内なら1,000点。間に合わなくても、着地後に30m以内へ近づくと500点です。</p>
+    <p>ターゲットから100〜400mの場所で停車し、地上風を報告すると50点（1回）。<br>チームのパイロットがマーカーを投下します。着地時に車が30m以内なら1,000点。間に合わなくても、着地後に30m以内へ近づくと500点です。</p>
     <p>制限時間30分以内に投下。投下済みなら時間切れ後も回収できます。地上風はゲーム内の風で、無線は文字で表示します。</p>
     <button id="chase-report" type="button" disabled>地上風を報告（C）</button>
     <p id="chase-report-hint">ターゲット付近で停車してください</p>
@@ -845,7 +853,7 @@
     <button id="setup-road1" type="button" class="howto-dev-btn">チェイスカーを出す</button>
     <button id="setup-road0" type="button" class="howto-dev-btn" hidden>チェイスカーを消す</button>
     <div class="howto-label">マーカー回収レース(実験)</div>
-    <div class="howto-note">気球はオートパイロットで自動飛行し、あなたは地上の車を操縦して
+    <div class="howto-note">チームのパイロットが気球を操縦し、あなたは地上の車を運転して
     ターゲット付近へ先回りします(気球ではなく車を操縦する、通常モードとは逆の遊び方です)。
     <b>W/S/A/D</b>で運転、<b>V</b>で進行方向／気球を見る、<b>O</b>(Bも可)で俯瞰と運転を切り替え。</div>
     <button id="setup-chase1" type="button" class="howto-dev-btn">マーカー回収レースを始める</button>
@@ -864,7 +872,7 @@
     街並み: <a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noopener">3D都市モデル(Project PLATEAU)</a>/ 国土交通省(CC BY 4.0)</span>
   <span id="credit-road" hidden>/
     道路: <a href="https://github.com/gsi-cyberjapan/gsimaps-vector-experiment" target="_blank" rel="noopener">国土地理院 地理院地図Vector(仮称)提供実験</a></span>
-  <p id="creative-note" hidden>実在の地形を土台にした創作空間です。これから加える建物や街並みは、実際の場所の再現ではありません。建物の配置機能は今後追加予定です。</p>
+  <p id="creative-note" hidden>実在の地形に、架空の建物や公園を配置しています。ホームの「街を作り変える」から編集できます。</p>
 </details>
 
 <div id="loading" style="display:none">

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createBalloonAutopilot } from './balloonAutopilot.js';
 import { addTeamLabel } from './teamLabels.js';
+import { createTeamPilot, segmentViolation, flightViolation } from './creativeAirspace.js';
 
 export async function loadTeamBalloonModel() {
   const { scene } = await new GLTFLoader().loadAsync(
@@ -81,7 +82,7 @@ function trafficMesh(color, stripe) {
   return group;
 }
 
-export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds }) {
+export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds, airspace = null }) {
   const group = new THREE.Group();
   group.name = 'creative-traffic-fleet';
   const balloons = TRAFFIC.map((profile, index) => {
@@ -91,9 +92,11 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds 
     pos.y = getHeight(pos.x, pos.z) + profile.height;
     mesh.position.copy(pos);
     group.add(mesh);
-    return { mesh, pos, vy: 0, heat: 0.65, burner: false, rip: false, profile,
-      pilot: createBalloonAutopilot({ windAt,
-        targetX: profile.dx, targetZ: profile.dz, cruiseScanFt: profile.cruise }) };
+    const valid=!airspace || !flightViolation(pos,airspace,getHeight);
+    mesh.visible=valid;
+    return { mesh, pos, active:valid, vy: 0, heat: 0.5, burner: false, rip: false, profile,
+      pilot: airspace ? createTeamPilot({windAt,airspace,getHeight,targetX:profile.dx,targetZ:profile.dz})
+        : createBalloonAutopilot({ windAt,targetX: profile.dx, targetZ: profile.dz, cruiseScanFt: profile.cruise }) };
   });
 
   function update(dt) {
@@ -103,8 +106,11 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds 
     const h = dt / steps;
     for (let step = 0; step < steps; step++) {
       for (const balloon of balloons) {
+        if (!balloon.active) continue;
         const { pos, pilot, profile } = balloon;
-        const control = pilot.control(pos, balloon.vy, h);
+        const before = {x:pos.x,y:pos.y,z:pos.z};
+        const control = pilot.control(pos, balloon.vy, h, balloon.heat);
+        if(control.blocked){balloon.active=false;balloon.mesh.visible=false;balloon.burner=false;balloon.rip=false;continue;}
         balloon.burner = control.burner;
         balloon.rip = control.rip;
         balloon.heat = THREE.MathUtils.clamp(balloon.heat
@@ -119,18 +125,24 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds 
           pos.y = ground + 5;
           balloon.vy = Math.max(0, balloon.vy);
         }
+        if (airspace && segmentViolation(before,pos,airspace,getHeight)) {
+          pos.set(before.x,before.y,before.z);
+          balloon.active=false;balloon.mesh.visible=false;balloon.burner=false;balloon.rip=false;
+          continue;
+        }
         // 地形の外へ出た機体は出発地点の上空へ戻し、6機の風景を維持する。
         if (bounds && (pos.x < bounds.minX || pos.x > bounds.maxX
           || pos.z < bounds.minZ || pos.z > bounds.maxZ)) {
           pos.set(startX + profile.dx, getHeight(startX + profile.dx, startZ + profile.dz) + profile.height,
             startZ + profile.dz);
           balloon.vy = 0;
-          balloon.heat = 0.65;
+          balloon.heat = 0.5;
+          if (airspace && flightViolation(pos,airspace,getHeight)) {balloon.active=false;balloon.mesh.visible=false;}
         }
         balloon.mesh.position.copy(pos);
       }
     }
   }
   return { group, update, positions: () => balloons.map(balloon => balloon.pos),
-    soundSources: () => balloons.map(({ pos, burner, rip }) => ({ pos, burner, rip })) };
+    soundSources: () => balloons.filter(b=>b.active).map(({ pos, burner, rip }) => ({ pos, burner, rip })) };
 }

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>街を作り変える · 創作の世界</title>
+  <link rel="stylesheet" href="./city-editor.css">
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+  <header><a href="./">← ホーム</a><div><small>CREATIVE WORLD / ATELIER</small><h1>街を作り変える</h1></div><a id="play-link" href="./play.html?world=creative&amp;mode=chase">街で遊ぶ ↗</a></header>
+  <main>
+    <aside>
+      <p class="intro">空から眺める街を、地上からつくる。<br>建物の合間に、車が抜けられる余白を。</p>
+      <details open><summary>建物と風景を置く</summary>
+        <div id="palette" class="palette"></div>
+        <p class="hint">素材を選び、地面をクリックして配置。ドラッグは視点移動、ホイールは拡大・縮小。</p>
+      </details>
+      <details open><summary>選んだものを変える</summary>
+        <label>配置一覧<select id="selection"><option value="">選択してください</option></select></label>
+        <fieldset id="properties" disabled>
+          <div class="pair"><label>東西 X（m）<input id="item-x" type="number" step="5"></label><label>南北 Z（m）<input id="item-z" type="number" step="5"></label></div>
+          <div class="pair"><label>向き（°）<input id="item-rotation" type="number" min="-360" max="360" step="15"></label><label>大きさ<input id="item-scale" type="number" min=".5" max="2" step=".1"></label></div>
+          <label id="length-field" hidden>通りの長さ（m）<input id="item-length" type="number" min="20" max="500" step="10"></label>
+          <label id="color-field">壁の色<input id="item-color" type="color"></label>
+          <div class="pair"><button id="move">移動先を選ぶ</button><button id="duplicate">複製</button></div>
+          <button id="delete" class="quiet danger">削除</button>
+        </fieldset>
+      </details>
+      <details><summary>飛行区域とPZ</summary>
+        <p class="hint">この街だけの飛行情報です。高度は海抜（MSL）。地面からの高さとは異なります。</p>
+        <label>最高高度（海抜m）<input id="ceiling" type="number" min="200" max="1500" step="50"></label>
+        <p class="hint">パイロットは上限より余裕を持って飛びます。高い建物にはPZが追従します。</p>
+        <label>PZの種類<select id="pz-type"><option value="red">赤：この高度未満を禁止</option><option value="yellow">黄：離着陸を禁止</option><option value="blue">青：この高度を超える飛行を禁止</option></select></label>
+        <div class="pair"><label>半径（m）<input id="pz-radius" type="number" value="150" min="30" max="1000"></label><label>境界高度（海抜m）<input id="pz-altitude" type="number" value="300" min="0" max="2000"></label></div>
+        <button id="add-pz">地図にPZを追加</button>
+        <ul id="zone-list"></ul>
+      </details>
+      <div class="save-area"><button id="save" class="primary">この街を保存</button><div class="pair"><button id="undo" disabled>元に戻す</button><button id="reset">初期の街に戻す</button></div></div>
+      <p class="hint">保存先はこのブラウザです。別の端末へは書き出したファイルで引き継げます。</p>
+      <div class="pair"><button id="export">街を書き出す</button><label class="file-button">街を読み込む<input id="import" type="file" accept=".json,application/json" hidden></label></div>
+    </aside>
+    <section id="view" aria-label="街の3D編集画面">
+      <nav class="views"><button id="overview">街全体</button><button id="focus">選択へ寄る</button><button id="top">真上から</button><button id="zones" aria-pressed="true">PZを表示</button></nav>
+      <div id="loading" role="status">地形と建物を読み込んでいます…</div>
+      <div id="mode" role="status">選択モード</div>
+      <div id="messages"><p id="status" role="status" aria-live="polite"></p><div id="warnings"></div></div>
+      <div class="legend"><span>● 離陸地</span><span>◎ ターゲット</span><span class="red">赤：低空禁止</span><span class="yellow">黄：離着陸禁止</span><span class="blue">青：高空禁止</span></div>
+    </section>
+  </main>
+  <script type="module" src="./city-editor.js"></script>
+</body>
+</html>
