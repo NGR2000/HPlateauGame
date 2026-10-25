@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>実際のデータの世界 — 熱気球と風景</title>
 <style>
+  #areasel, #briefing, #howto-overlay {
+    position: fixed; inset: 0; z-index: 10; overflow-y: auto;
+    background: rgba(5,12,20,0.94); padding: 24px; box-sizing: border-box;
+  }
+
   html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
   #app { position: fixed; inset: 0; touch-action: none; }
   .panel {
@@ -34,50 +39,6 @@
   #pibal table { border-collapse: collapse; font-family: Consolas, monospace; font-size: 12px; }
   #pibal th, #pibal td { padding: 2px 8px; text-align: right; border-bottom: 1px solid #345; }
   #pibal .note { font-size: 10px; color: #9ab; margin-top: 4px; }
-  #area-search {
-    top: 12px; left: 50%; transform: translateX(-50%); z-index: 5;
-    width: auto; max-width: min(92vw, 360px);
-  }
-  #area-search[open] { width: 280px; }
-  #area-search summary {
-    cursor: pointer; list-style: none; font-size: 13px; white-space: nowrap;
-  }
-  #area-search summary::-webkit-details-marker { display: none; }
-  #area-search summary::after { content: ' ▸'; color: #9ecfff; font-size: 11px; }
-  #area-search[open] summary::after { content: ' ▾'; }
-  #area-search[open] summary { margin-bottom: 6px; }
-  #area-search .as-row { display: flex; gap: 6px; }
-  #area-search input {
-    flex: 1; min-width: 0; padding: 6px 8px; border-radius: 4px; border: 1px solid #345a7a;
-    background: #0d1620; color: #e8f0f6; font-size: 13px; font-family: inherit;
-  }
-  #area-search button {
-    padding: 6px 12px; border: 0; border-radius: 4px; background: #2e6da4;
-    color: #fff; font-size: 13px; cursor: pointer; white-space: nowrap;
-  }
-  #area-search button:hover { background: #3a80bd; }
-  #area-search-results { list-style: none; margin: 6px 0 0; padding: 0; max-height: 220px; overflow-y: auto; }
-  #area-search-results:empty { margin: 0; }
-  #area-search-results li { padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-  #area-search-results li:hover { background: rgba(255, 255, 255, 0.1); }
-  #area-search-results li.as-empty { color: #9ab; cursor: default; }
-  #area-search-results li.as-empty:hover { background: none; }
-  #area-search .as-hint { margin-top: 6px; font-size: 10px; color: #9ab; }
-  #address-map-overlay .b-panel { max-width: min(92vw, 820px); }
-  #address-map-title { color: #9ecfff; margin-bottom: 6px; }
-  #area-search-map {
-    width: min(64vw, 760px); height: auto; margin: 0 auto;
-    border: 1px solid #345a7a; border-radius: 4px; cursor: crosshair; display: block;
-    touch-action: none;
-  }
-  .as-overlay-actions { display: flex; gap: 10px; margin-top: 14px; }
-  .as-overlay-actions button {
-    flex: 1; padding: 11px 0; border: 0; border-radius: 6px; font-size: 15px; cursor: pointer;
-  }
-  #area-search-go { background: #2e6da4; color: #fff; }
-  #area-search-go:hover { background: #3a80bd; }
-  #area-search-cancel { background: #33414f; color: #e8f0f6; }
-  #area-search-cancel:hover { background: #3d4d5e; }
   .howto-panel { max-width: min(92vw, 420px); }
   .howto-label { font-size: 13px; color: #9ab; margin-bottom: 8px; }
   .howto-links { display: flex; gap: 10px; }
@@ -211,10 +172,6 @@
     .panel { font-size: 11px; padding: 7px 10px; }
     #instruments { min-width: 128px; }
     #instruments .alt-big { font-size: 22px; }
-    #area-search {
-      top: 8px; bottom: auto; left: 50%; right: auto; transform: translateX(-50%);
-    }
-    #area-search[open] { width: auto; max-width: 92vw; }
     #compass { width: 72px; height: 72px; left: 8px; bottom: 54px; transform: none; }
     #help { left: 8px; bottom: 8px; max-width: 60vw; }
     #credit { right: 8px; bottom: 140px; font-size: 9px; max-width: 34vw; }
@@ -268,12 +225,6 @@
   #loading .logo { font-size: 40px; font-weight: bold; letter-spacing: 6px; color: #9ecfff; }
   #loading .tagline { font-size: 14px; color: #cdd9e4; margin-bottom: 8px; }
   #loading .p { font-family: Consolas, monospace; color: #9ecfff; }
-  #briefing, #dev-briefing, #areasel, #address-map-overlay, #howto-overlay, #setup-overlay {
-    position: fixed; inset: 0; z-index: 10;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(8, 14, 20, 0.9);
-    font-family: "Segoe UI", "Yu Gothic UI", sans-serif; color: #e8f0f6;
-  }
   #area-map {
     width: min(72vw, 960px); height: auto;
     border: 1px solid #345a7a; border-radius: 4px; cursor: crosshair; display: block;
@@ -452,9 +403,8 @@
   <div class="row"><span>残り時間</span><span class="num" id="clock">30:00</span></div>
 </details>
 
-<!-- devMode専用の隠しデバッグ表示。Wキーで表示/非表示。気圧配置モデルの計算過程を
-     フライト中の現在位置で確認できる(離陸前のブリーフィング画面と同じ内容を、リアルタイムで) -->
-<pre id="flight-windcalc-debug" class="windcalc-result flight-windcalc-debug" style="display:none"></pre>
+
+
 
 <div id="areasel" style="display:none">
   <div class="b-panel">
@@ -468,7 +418,11 @@
 
 <div id="briefing" style="display:none">
   <div class="b-panel">
-    <div class="b-title" id="briefing-title">タスクブリーフィング</div>
+    <div class="b-title" id="briefing-title">フライト準備</div>
+    <p>エリア：<span id="selected-area"></span> · <a href="./play.html">エリアを選び直す</a></p>
+    <p><label>フライト開始時刻 <input id="flight-time" type="time" value="07:00" required></label></p>
+    <p class="b-hint">飛行中の風には、下のパイバル設定を使います。</p>
+    <p id="flight-settings-warning" role="status" style="color:#ffca5b"></p>
     <div class="b-cols">
       <div class="b-left">
         <table class="tasksheet">
@@ -504,188 +458,8 @@
   </div>
 </div>
 
-<!-- 開発途中版(?dev=1)専用のブリーフィング。#briefing とは別要素・別IDで完全に切り離す
-     (GameTargetで検討中の新機能はこちらに追加していく。安定版の #briefing は変更しない) -->
-<div id="dev-briefing" style="display:none">
-  <div class="b-panel">
-    <div class="b-title" id="dev-briefing-title">タスクブリーフィング(開発途中版)</div>
-    <div class="b-cols">
-      <div class="b-left">
-        <table class="tasksheet">
-          <tr><th>競技</th><td>JDG(ジャッジ・ディクレアード・ゴール)</td></tr>
-          <tr><th>ターゲット</th><td>地図上の橙色X</td></tr>
-          <tr><th>離陸</th><td>個別離陸(地図をクリックして選択)</td></tr>
-          <tr><th>制限時間</th><td>30:00(ゲーム内時間)</td></tr>
-          <tr><th>マーカー</th><td>1本(Mキーで投下)</td></tr>
-          <tr><th>スコア</th><td>マーカー着地点〜ターゲット中心の距離</td></tr>
-          <tr><th>日出・日没</th><td id="tasksheet-sunrise">取得中…(このエリアの今日の実データ)</td></tr>
-        </table>
-        <div class="b-sub">パイバル観測データ(編集できます)</div>
-        <div class="wind-tools">
-          <select id="wind-preset-dev"></select>
-          <button id="wind-add-dev" type="button">+行</button>
-          <button id="wind-copy-dev" type="button">条件URLをコピー</button>
-          <button id="wind-realdata-dev" type="button">実データ取得(全高度)</button>
-        </div>
-        <table class="b-pibal">
-          <thead><tr><th>高度ft</th><th>風向°</th><th>風速kt</th><th></th></tr></thead>
-          <tbody id="wind-editor-dev"></tbody>
-        </table>
-        <div class="b-hint" id="wind-realdata-status"></div>
-        <div class="b-hint">
-          風向はFROM(磁方位)。表は編集でき、プリセット選択・行の追加削除も可能です。<br>
-          ターゲットの風上側に離陸地点を取り、高度で風を乗り換えて狙いましょう。<br>
-          「条件URLをコピー」で、この風と同じ条件に挑戦できるURLを共有できます。<br>
-          「実データ取得(全高度)」は Open-Meteo の実況風(地表付近の高度別風+気圧面の風)を
-          現在の表の各行の高度に合わせて内挿し、パイバル表全体に反映する実験機能です
-          (気圧配置モデルはこの表の0ft行を基準にキャリブレーションします)。<br>
-          <b style="color:#ffca5b;">※ 開発途中版です。新機能(気圧配置モデル等)は今後ここに追加されます。</b>
-        </div>
-      </div>
-      <div class="b-right">
-        <canvas id="launch-map-dev" width="1280" height="1280"></canvas>
-        <div class="mapnote">地理院タイル(標準地図)/ 北が上 / クリック: 離陸地点を選択 / ホイール: 拡大縮小 / ドラッグ: 移動</div>
-        <button id="launch-btn-dev" disabled>地図で離陸地点を選択してください</button>
-      </div>
-    </div>
 
-    <div class="b-pressure">
-      <div class="b-sub">気圧配置(H・L) — 実験中(位置・気圧値を入力すると、下で風を計算します)</div>
-      <div class="pressure-tools">
-        <button id="pressure-mode-h" type="button" class="pmode-btn pmode-h active">高気圧(H)を置く</button>
-        <button id="pressure-mode-l" type="button" class="pmode-btn pmode-l">低気圧(L)を置く</button>
-        <button id="pressure-clear" type="button" class="pmode-clear">クリア</button>
-        <label class="pressure-ref-btn">
-          参考天気図を読み込む
-          <input type="file" id="pressure-ref-input" accept="image/*" style="display:none">
-        </label>
-      </div>
-      <div class="pressure-row">
-        <div class="pressure-col">
-          <canvas id="pressure-map-dev" width="1280" height="960"></canvas>
-          <div class="mapnote">クリックで、選択中(H/L)の点を置きます(それぞれ最大5個)</div>
-          <table class="b-pibal pressure-table">
-            <thead><tr><th>種別</th><th>緯度</th><th>経度</th><th>気圧hPa</th><th></th></tr></thead>
-            <tbody id="pressure-editor-dev"></tbody>
-          </table>
-          <button id="pressure-realdata-dev" type="button">実データ取得(各点の気圧)</button>
-          <div class="b-hint" id="pressure-realdata-status">
-            置いたH・L点それぞれの座標に対し、Open-Meteoの実況気圧(海面更正気圧)を取得して
-            気圧hPa欄へ反映します(先に地図でH・Lを置いてください)。
-          </div>
-        </div>
-        <div class="pressure-col">
-          <div class="pressure-ref-note">参考天気図(見比べ用・任意)</div>
-          <img id="pressure-ref-img" class="pressure-ref-img" style="display:none">
-          <div class="pressure-ref-placeholder" id="pressure-ref-placeholder">画像を読み込むとここに表示されます</div>
-        </div>
-      </div>
 
-      <div class="b-windcalc">
-        <div class="b-sub">風の計算(実験) — 気圧配置から地上風を計算し、離陸時にフライトへ反映します</div>
-        <div class="windcalc-params">
-          <label>K(勾配→風速kt) <input type="number" id="wc-K" step="0.5" value="8"></label>
-          <label>L(減衰距離km) <input type="number" id="wc-L" step="10" value="500"></label>
-          <label>減速係数(%) <input type="number" id="wc-damp" step="1" value="65"></label>
-          <label>角度補正(°) <input type="number" id="wc-angle" step="1" value="20"></label>
-          <label>地上層厚み(ft) <input type="number" id="wc-layer" step="100" value="1000"></label>
-        </div>
-        <pre class="windcalc-result" id="windcalc-result">H・Lを2点以上置くと、計算結果がここに表示されます。</pre>
-      </div>
-    </div>
-
-    <div class="b-diurnal">
-      <div class="b-sub">気象条件(実データ・注意喚起) — パイバルの「実データ取得(全高度)」と同時に取得します</div>
-      <pre class="windcalc-result" id="wx-result">「実データ取得(全高度)」を押すと、その時点の風・ガスト・視程・天気をここに表示します。</pre>
-      <div class="windcalc-params">
-        <label>ガストの目安(kt・任意) <input type="number" id="wx-gust" step="1" placeholder="未設定(基準なし)"></label>
-        <label>視程の目安(m・任意) <input type="number" id="wx-vis" step="500" value="1500"></label>
-        <label>CAPEの目安(J/kg・任意) <input type="number" id="wx-cape" step="100" placeholder="未設定(基準なし)"></label>
-        <label>気温と露点の差の目安(℃・任意) <input type="number" id="wx-spread" step="0.5" placeholder="未設定(基準なし)"></label>
-      </div>
-      <div class="pressure-tools">
-        <button id="wx-guide" type="button" class="pmode-btn">目安の決め方(この地点の実データを調べる)</button>
-        <span id="wx-guide-status" style="font-size:12px;color:#9ecfff;"></span>
-      </div>
-      <pre class="windcalc-result" id="wx-guide-result" style="display:none;"></pre>
-      <div class="pressure-tools">
-        <button id="wx-apply-blh" type="button" class="pmode-btn" disabled>境界層高度を「地上層の厚み」に適用する</button>
-        <span id="wx-apply-blh-note" style="font-size:12px;color:#9ecfff;"></span>
-      </div>
-      <div class="b-hint">
-        熱気球は<b>早朝や夕凪の穏やかな風のときに飛びます</b>。ガスト(瞬間的に強く吹く風)は
-        できるだけない方が望ましいとされますが、<b>何ktから飛べないという明確な基準はありません</b>。
-        そのためこのゲームでは合否を判定せず、数値を示して注意を促すだけにしています。<br>
-        <b>地表の加熱状況</b>(気温・日射量・雲量)は、日周期変動の背景を読むための参考です。
-        日射で地表が温まると対流が起き、上空の風が地上に降りてくるため、日中は風が強まります。
-        ただし実データで確かめたところ、<b>地上風との相関は日射量より境界層高度のほうが強く</b>
-        (0.64 対 0.91)、日射のピークより風のピークは2時間ほど遅れます。
-        そのためこのゲームでは、これらの値を風の計算には使っていません。<br>
-        <b>CAPE</b>は「大気がどれだけ対流(上昇気流)を起こしうるか」を表す量です。
-        値が大きいほど雷雨や活発な熱気泡(サーマル)が起こりやすい状態を意味しますが、
-        <b>あくまで潜在的なエネルギーであり、きっかけがなければ実際に荒れるとは限りません</b>。
-        括弧内の区分は気象一般で使われるもので、熱気球の可否基準ではありません。<br>
-        <b>湿りの状態</b>(相対湿度・露点温度)は、視程が悪くなりやすいかを読むための参考です。
-        気温と露点の差が小さいほど空気は飽和に近づきます。実データ(3地点・60日)で確かめたところ、
-        差が小さいほど視程が悪い傾向はありました(佐賀では差0.5℃未満で視程の中央値2.6km、
-        3℃以上で27.1km)。ただし<b>その効き方は地点によって大きく違い</b>、
-        今後の視程低下を先読みできるかを調べると、佐賀・佐久では効いた一方
-        <b>渡良瀬ではほとんど効きませんでした</b>。先読みできる時間も1〜2時間程度しかありません。
-        そのためこのゲームでは<b>霧の判定も予測もせず</b>、数値を示すだけにしています。<br>
-        上の欄に数値を入れると、その値に達したとき(視程と気温・露点の差は下回ったとき)に
-        印を付けます。<br>
-        <b>初期値を入れているのは視程だけです。</b>1500mは
-        <b>航空法施行規則第5条の有視界気象状態</b>で、高度3000m未満・管制区・管制圏・情報圏以外の
-        空域を飛ぶ場合に定められた飛行視程です(熱気球も航空法上の航空機にあたります)。
-        <b>管制圏・情報圏の内側では5000m</b>になるなど、飛行場所によって適用される値が変わるため、
-        必要に応じて書き換えてください。<br>
-        <b>ガスト・CAPE・気温と露点の差には初期値を入れていません。</b>
-        いずれも熱気球の可否を判断できる基準が存在しないためです。
-        何を入れればよいか分からないときは<b>「目安の決め方」</b>を押してください。
-        その地点の直近60日のうち、熱気球が飛ぶ時間帯(5〜8時・16〜19時)の実データを集計し、
-        <b>どのくらいの値が普通で、どこからが珍しいか</b>を示します。
-        安全の基準ではなく、「いつもより荒れている日に印が付く」ように目安を選ぶための材料です。<br>
-        <b style="color:#ffca5b;">※ これはゲーム内の参考値です。</b>
-        実際のフライトの可否判断には使えません。実際に飛ぶ際は、必ず公式の気象情報と
-        現地の目視で判断してください。
-      </div>
-    </div>
-
-    <div class="b-diurnal">
-      <div class="b-sub">地上風の日周期変動(実験) — フライト開始時刻を選ぶと、気圧配置モデルの風に日周期係数を掛けて判断材料にします</div>
-      <div class="pressure-tools">
-        <button id="diurnal-dawn" type="button" class="pmode-btn pmode-dawn">早朝(07:00〜)</button>
-        <button id="diurnal-dusk" type="button" class="pmode-btn pmode-dusk">夕方(16:00〜)</button>
-      </div>
-      <div class="windcalc-params">
-        <label>早朝の離陸時刻 <input type="time" id="wc-dawntime" value="07:00"></label>
-        <label>夕刻の離陸時刻 <input type="time" id="wc-dusktime" value="16:00"></label>
-        <label>BLH基準(m) <input type="number" id="wc-blhref" step="100" value="1800"></label>
-        <label>BLH指数 <input type="number" id="wc-blhexp" step="0.01" value="0.44"></label>
-        <label>早朝係数 <input type="number" id="wc-dawn" step="0.05" value="0.35"></label>
-        <label>夕方係数(平均) <input type="number" id="wc-duskmean" step="0.05" value="0.8"></label>
-        <label>夕方係数(ランダム幅±) <input type="number" id="wc-duskwidth" step="0.05" value="0.3"></label>
-        <label>キャンセル中心(kt) <input type="number" id="wc-cancelc" step="0.5" value="10"></label>
-        <label>キャンセル幅(kt) <input type="number" id="wc-cancelw" step="0.5" value="2"></label>
-      </div>
-      <pre class="windcalc-result" id="diurnal-result">「フライト開始時刻」を先に選ぶと、ここに判定結果が表示されます(ボタンを押し直すと再判定します)。</pre>
-      <div class="pressure-tools">
-        <button id="diurnal-apply-blh" type="button" class="pmode-btn" disabled>境界層高度から日周期係数を求めて適用する</button>
-        <span id="diurnal-apply-blh-note" style="font-size:12px;color:#9ecfff;"></span>
-      </div>
-      <div class="b-hint">
-        日周期係数は「気圧配置モデルの風のうち、どれだけが地上に届くか」を表す値です。
-        境界層が浅い早朝は地表付近が上空と切り離されて風が弱く、厚くなる日中〜夕刻は
-        上空の風が地上に降りてきて強まります。<br>
-        実データ72時間分から <b>風速 ∝ 境界層高度<sup>0.44</sup></b> という関係が得られたため
-        (log-log相関 0.887)、選んだ離陸時刻の境界層高度から係数を計算できます。
-        先に「実データ取得(全高度)」を押しておくと、上のボタンが使えるようになります。<br>
-        既定の手入力値(早朝0.35 / 夕方0.8)は経験的に置いたものですが、
-        この式で求めると 早朝0.38 / 夕刻0.84 程度になり、ほぼ一致します。
-      </div>
-    </div>
-  </div>
-</div>
 
 <div id="result" class="panel" style="display:none">
   <div class="r-title">JDG リザルト</div>
@@ -704,44 +478,22 @@
   <div class="note">高度: MSL / 風向: FROM(磁方位)<br>※磁気偏角は未考慮(プロトタイプ)</div>
 </details>
 
-<details id="area-search" class="panel">
-  <summary>住所・地名で移動</summary>
-  <div class="as-row">
-    <input id="area-search-input" type="text" placeholder="住所・地名で移動(例: 東京都渋谷区)">
-    <button id="area-search-btn" type="button">検索</button>
-  </div>
-  <ul id="area-search-results"></ul>
-</details>
 
-<div id="address-map-overlay" style="display:none">
-  <div class="b-panel">
-    <div class="b-title" id="address-map-title">位置を確認</div>
-    <canvas id="area-search-map" width="1280" height="960"></canvas>
-    <div class="mapnote">クリック: 位置を選択 / ドラッグ: 移動 / ホイール: 拡大縮小 / 橙色の枠が飛行エリア(約20km四方)</div>
-    <div class="as-overlay-actions">
-      <button id="area-search-cancel" type="button">キャンセル</button>
-      <button id="area-search-go" type="button">この場所へ移動</button>
-    </div>
-  </div>
-</div>
+
+
 
 <button id="pause-btn" type="button" hidden>⏸ 一時停止</button>
 
 <canvas id="compass" width="150" height="150"></canvas>
 
-<!-- 操作説明。キー割当が増えて背が高くなったので、**キー説明だけ**をたためるようにした。
-     **「本格モード」「使い方」は details の外に置く。**初めての人の入口なので、
-     たたんでも押せなければならない。summary の中に入れるとブラウザ任せの挙動になり、
-     実際に「たたんだ状態で押せない」状態になった(2026-08-28)。外に出せば
-     ただのリンクなので、たたんでいるかどうかに関係なく確実に押せる。
-     タッチ端末では .kbd-only ごとキー説明が消え、リンクだけの1行になる -->
+
 <div id="help" class="panel">
   <!-- 通常モードの操作説明。applyRaceHudMode() が chaseMode のときだけ隠す -->
   <details id="help-keys" class="kbd-only">
     <summary>操作説明</summary>
     <b>Space</b> バーナー(長押し) <b>R</b> リップライン(長押し) <b>M</b> マーカー投下<br>
     <b>V</b> 視点切替<span id="help-view">(ゴンドラ/外部)</span> <b>1-4</b> 時間加速 ×1/×2/×4/×8<br>
-    <span id="help-radio" hidden><b>C</b> 無線(地上クルーへの問い合わせ)<br></span>
+
     <b>P</b> パイバル表 表示/非表示 マウスドラッグ: 視点回転 / ホイール: ズーム
   </details>
   <!-- ?mode=chase 専用の操作説明。既定は隠しておき、applyRaceHudMode() が chaseMode のときだけ出す -->
@@ -752,7 +504,7 @@
     <b>1-4</b> 時間加速 ×1/×2/×4/×8 <b>P</b> パイバル表 表示/非表示<br>
     停車中: ドラッグで見回す。俯瞰・停車中: ホイール／ピンチで拡大縮小。俯瞰を開き直すと自分のチームに戻ります。
   </details>
-  <a id="setup-link" href="#">本格モード</a>
+  <a id="setup-link" href="./play.html">フライト準備</a>
   <span class="mode-separator">/</span> <a id="howto-link" href="#">使い方</a>
   <p id="creative-flight-info" hidden>自分のチーム：MV56b · チームのパイロットと5機の気球</p>
   <details id="creative-airspace" hidden>
@@ -829,49 +581,16 @@
   </div>
 </div>
 
-<div id="setup-overlay" style="display:none">
-  <div class="b-panel howto-panel">
-    <div class="b-title">本格モード</div>
-    <div class="howto-label">動画</div>
-    <div class="howto-links">
-      <a href="https://www.instagram.com/hotairballoongames2026?utm_source=qr" target="_blank" rel="noopener">Instagram</a>
-    </div>
-    <div class="howto-note">hot-air-balloon1(エリア・風・離陸地点を自分で選ぶ本格JDGモード)の
-    最新版が遊べる環境は、Instagramでお知らせします。</div>
-    <button id="setup-try" type="button" class="howto-try-btn">お試しでやってみる(最新版ではありません)</button>
-    <button id="setup-dev" type="button" class="howto-dev-btn">開発途中版(新機能を試す・不安定です)</button>
-    <div class="howto-label">街並み(PLATEAU)</div>
-    <div class="howto-note">実在の建物を重ねて表示します(表示のみ。飛行の挙動は変わりません)。
-    国土交通省が整備した地域だけに出ます。佐賀市・一関・上士幌は未整備のため表示されません。</div>
-    <button id="setup-city1" type="button" class="howto-dev-btn">街並み: 箱のみ(軽い)</button>
-    <button id="setup-city2" type="button" class="howto-dev-btn">街並み: 写真つき(重い)</button>
-    <button id="setup-city0" type="button" class="howto-dev-btn" hidden>街並みを消す</button>
-    <div class="howto-label">チェイスカー(地上クルー)</div>
-    <div class="howto-note">実在の道路を走る車が2台出ます(表示のみ。飛行の挙動は変わりません)。
-    1号車は気球を追い、2号車はターゲット手前で待って地上風を報告します(<b>C</b>で無線)。
-    開発途中版の機能なので、押すと開発途中版に切り替わります。</div>
-    <button id="setup-road1" type="button" class="howto-dev-btn">チェイスカーを出す</button>
-    <button id="setup-road0" type="button" class="howto-dev-btn" hidden>チェイスカーを消す</button>
-    <div class="howto-label">マーカー回収レース(実験)</div>
-    <div class="howto-note">チームのパイロットが気球を操縦し、あなたは地上の車を運転して
-    ターゲット付近へ先回りします(気球ではなく車を操縦する、通常モードとは逆の遊び方です)。
-    <b>W/S/A/D</b>で運転、<b>V</b>で進行方向／気球を見る、<b>O</b>(Bも可)で俯瞰と運転を切り替え。</div>
-    <button id="setup-chase1" type="button" class="howto-dev-btn">マーカー回収レースを始める</button>
-    <button id="setup-chase0" type="button" class="howto-dev-btn" hidden>通常モードに戻す</button>
-    <button id="setup-close" type="button" class="howto-close-btn">閉じる</button>
-  </div>
-</div>
+
 
 
 
 <details id="credit" class="panel">
   <summary>出典</summary>
   <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a>(標高タイル・全国最新写真)/
-  住所検索: <a href="https://msearch.gsi.go.jp/address-search/" target="_blank" rel="noopener">国土地理院 Address Search API</a>
-  <span id="credit-plateau" hidden>/
-    街並み: <a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noopener">3D都市モデル(Project PLATEAU)</a>/ 国土交通省(CC BY 4.0)</span>
-  <span id="credit-road" hidden>/
-    道路: <a href="https://github.com/gsi-cyberjapan/gsimaps-vector-experiment" target="_blank" rel="noopener">国土地理院 地理院地図Vector(仮称)提供実験</a></span>
+
+
+
   <p id="creative-note" hidden>実在の地形に、架空の建物や公園を配置しています。ホームの「街を作り変える」から編集できます。</p>
 </details>
 
@@ -885,8 +604,8 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/examples/jsm/"
   }
 }
 </script>

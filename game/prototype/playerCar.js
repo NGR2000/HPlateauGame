@@ -9,7 +9,7 @@
 // シグネチャ(dt, input)はそのまま保ち、中身だけ「辺の上を進む」処理に
 // 差し替えられるよう意識して作ってある。
 import * as THREE from 'three';
-import { DRAPE_LIFT } from './road.js';
+import { DRAPE_LIFT } from './roadConstants.js';
 
 // 走行性能(目安値。実車の数値ではなくアーケード的な操作感を優先)
 const MAX_SPEED_MPS = 20;       // 前進の上限(≒72km/h)

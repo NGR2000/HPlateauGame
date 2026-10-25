@@ -8,7 +8,7 @@
 
 [ホームを開く](https://ngr2000.github.io/HPlateauGame/)
 
-- **実際のデータの世界**：これまでの気球ゲーム。エリア選択、本格モード、実験機能はゲーム内から利用できます。
+- **実際のデータの世界**：これまでの気球ゲーム。エリア・風・開始時刻・離陸地点を選んで飛行します。実験機能は開発環境専用です。
 - **創作の世界**：佐賀・嘉瀬川の既定エリア・風・出発地点を使うチェイスモード。車を操作し、チームのパイロットと周囲の5機が気球を飛ばします。
 
 創作側は実地形を草地として表現した架空の街です。実在の街並みを再現するものではありません。
@@ -74,29 +74,40 @@ PZの意味は [FAI AX Model Event Rules 2026 の7.3〜7.4](https://watchmefly.n
 
 ## クラウドで開発
 
-リポジトリのルートで以下を実行します。ビルドやパッケージのインストールは不要です。
+Node.js 24 と Python 3 を使います。
 
 ```sh
-python3 -m http.server 8000 --bind 127.0.0.1
+npm ci --ignore-scripts
+npm run audit
+npm test
+npm run build
+python3 -m http.server 8000 --bind 127.0.0.1 --directory dist
 ```
 
-ブラウザ確認用の入口は `/game/prototype/` です。
+ブラウザ回帰テストは、Playwright・Pillow・Chromiumがある環境で `dist` をポート8001に配信し、`python3 tests/browser-smoke.py` を実行します。外部地形は固定画像で代替し、通常版の設定・離陸、不正な風の拒否、創作側の運転、街の編集画面、開発ページの非公開を確認します。実サービスの通信確認とは分けて扱います。
 
-| パス | 内容 |
-| --- | --- |
-| `/` | ホームへ移動 |
-| `/game/prototype/` | 世界を選ぶホーム |
-| `/game/prototype/play.html` | 実際のデータの世界 |
-| `/game/prototype/play.html?world=creative&mode=chase` | 創作の世界 |
-| `/game/prototype/city-editor.html` | 街づくり・飛行区域の編集 |
+公開用の入口は `/game/prototype/` です。実際のデータの世界はエリア選択、フライト準備（風・開始時刻・離陸地点）、離陸の順に進みます。開始時刻は共有URLに保存しますが、飛行の風はパイバル設定を使います。住所検索は削除しています。旧共有URLのエリアと風も検証後に準備画面へ引き継ぎます。
 
-以前の `/game/prototype/?a=…&w=…` などの共有URLは、パラメータを保って `play.html` へ移動します。
-創作側は舞台を固定するため、他のエリア・風・モード指定を引き継ぎません。
+共有URLは4096文字まで、風は32行まで（高度0〜30000ft、風向0〜360度、風速0〜150kt、高度重複不可）です。不正な共有値は警告して初期設定へ戻し、不正な編集値では離陸・共有できません。
 
-Three.jsはjsDelivr、地形・航空写真は国土地理院から取得します。PLATEAUや気象などの出典はゲーム内に表示しています。
-修正後はホームの両方の入口、ゲーム起動、創作側の車の操作、ホームへの復帰、従来の共有URLを確認してからGitHubへ反映します。
-GitHub Pagesは `main` のリポジトリルートから公開します。
+Three.js はロックファイルで固定し、配布物へ同梱します。公開HTMLにはビルド時にCSPを設定し、スクリプトを同一サイトとハッシュの一致するインライン要素に限定します。地形・航空写真の通信先は国土地理院です。取得時間、受信量、画像サイズ、同時取得数を制限しています。
 
-街の保存と検証・PZの高度判定・チームパイロットの予測飛行・得点・報告条件・投下予告・タイル取得処理のテストは、Node.js 24で `node --test tests/*.test.mjs` を実行します。
+### 開発・実験機能
 
-将来対応のローカル検討資料は `.local-planning/` に置き、`.gitignore` でGit管理から除外しています。
+`game/development/play.html` は開発環境専用です。`npm run build` 後、別ポートでリポジトリをループバックへ配信して利用します。
+
+```sh
+python3 -m http.server 8002 --bind 127.0.0.1
+```
+
+`/game/development/play.html?dev=1` で気象・気圧配置などを検証できます。PLATEAU、道路クルー、実際のデータの世界のマーカー回収レースも開発版に残しています。開発版の外部データにも取得先・容量・時間・形式の検査を適用しています。
+
+開発コードは `dist` に入りません。ソースを含むリポジトリ自体の公開・非公開はGitHubの設定で管理します。
+
+### GitHub Pagesへの公開
+
+**従来の「main のルートから公開」は使用しないでください。** 開発ページが配信されるため、変更を公開する前に Settings → Pages → Build and deployment → Source を **GitHub Actions** に切り替えます。
+
+`.github/workflows/pages.yml` はpush・PR時にはテスト・依存関係監査・ビルドだけを行います。公開は Actions → Validate and deploy public game → Run workflow で `main` を選んで明示的に実行してください。PagesのSourceがGitHub Actionsになっていることをワークフローでも確認し、`dist` だけを公開します。開発モジュールが公開コードの依存先に入った場合はビルドが失敗します。環境の自動セットアップ用の保存手順とは別の公開設定です。
+
+将来対応のローカル検討資料は `.local-planning/` に置き、Git管理から除外します。
