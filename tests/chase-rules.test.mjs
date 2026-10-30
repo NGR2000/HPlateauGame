@@ -6,7 +6,8 @@ import { createBalloonAutopilot } from '../game/prototype/balloonAutopilot.js';
 test('地上風報告: 距離・停止速度の境界と競技状態', () => {
   const status = (distance, speedMps = 0, extra = {}) => groundReportStatus({ active: true, distance, speedMps, ...extra });
   assert.equal(status(99.99), 'too-close');
-  assert.equal(status(100, 0.05), 'ready');
+  assert.equal(status(100, 0.05), 'too-close');
+  assert.equal(status(100.01, 0.05), 'ready');
   assert.equal(status(400, -0.05), 'ready');
   assert.equal(status(400.01), 'too-far');
   assert.equal(status(200, 0.051), 'moving');

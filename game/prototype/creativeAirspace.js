@@ -1,3 +1,4 @@
+import {markerLanding} from './radioObservation.js';
 // Game airspace only. All numeric altitudes are MSL metres.
 export const BALLOON_HEIGHT = 28;
 export const BALLOON_RADIUS = 12;
@@ -44,11 +45,12 @@ export function predictStep(state,dt,control,windAt,getHeight){
   if(y<=ground){y=ground;vy=Math.max(0,vy);}
   return {x,y,z,vy,heat,grounded:y<=ground+.05};
 }
-export function createTeamPilot({windAt,targetX=0,targetZ=0,airspace,getHeight=()=>0,onRadio=()=>{}}){
-  let target=null,untilScan=0,drop=false,notified=false,previousMessage='',clearance=false;
+export function createTeamPilot({windAt,targetX=0,targetZ=0,airspace,getHeight=()=>0,onRadio=()=>{},forecastWindAt=windAt,planMarker=false}){
+  let target=null,untilScan=0,drop=false,notified=false,previousMessage='',clearance=false,lastVy=0,lastHeat=.5,dropCheck=0;
+  const observedAltitudes=[];
   function pick(pos,vy,heat){
     const current=limitsAt(pos.x,pos.z,airspace);
-    const candidates=new Set([80,120,160,210,260,310,360,410,460,510,550,target,current.top-50]);
+    const candidates=new Set([80,120,160,210,260,310,360,410,460,510,550,target,current.top-50,...observedAltitudes]);
     for(const z of airspace.zones) {
       if(z.type==='red')candidates.add(z.altitude+ALTITUDE_MARGIN+15);
       if(z.type==='blue')candidates.add(z.altitude-BALLOON_HEIGHT-50);
@@ -59,7 +61,7 @@ export function createTeamPilot({windAt,targetX=0,targetZ=0,airspace,getHeight=(
       let s={...pos,vy,heat,grounded:pos.y<=getHeight(pos.x,pos.z)+.05},valid=true;
       // 150 seconds includes the climb and the downwind crossing, sampled at 0.5 s.
       for(let t=0;t<150;t+=.5){
-        const next=predictStep(s,.5,heightControl(s.y,s.vy,s.heat,alt),windAt,getHeight);
+        const next=predictStep(s,.5,heightControl(s.y,s.vy,s.heat,alt),forecastWindAt,getHeight);
         if(segmentViolation(s,next,airspace,getHeight) || next.y<getHeight(next.x,next.z)+1 && t>25){
           valid=false;break;
         }
@@ -67,7 +69,12 @@ export function createTeamPilot({windAt,targetX=0,targetZ=0,airspace,getHeight=(
       }
       if(!valid)continue;
       const gain=Math.hypot(pos.x-targetX,pos.z-targetZ)-Math.hypot(s.x-targetX,s.z-targetZ);
-      const score=gain-Math.abs(alt-pos.y)*.10-(target!==null&&alt!==target?8:0);
+      const landing=planMarker?markerLanding(s,s.vy,forecastWindAt,getHeight):s;
+      const w=forecastWindAt(s.y,s.x,s.z),dx=targetX-landing.x,dz=targetZ-landing.z;
+      const speed=Math.hypot(w.vx,w.vz);
+      const miss=speed>.1&&dx*w.vx+dz*w.vz>0?Math.abs(dx*w.vz-dz*w.vx)/speed:Math.hypot(dx,dz);
+      // A fast wind that passes beside the target is not a good final approach.
+      const score=(planMarker?gain*.1-miss*2:gain)-Math.abs(alt-pos.y)*.10-(target!==null&&alt!==target?8:0);
       if(score>bestScore){best=alt;bestScore=score;}
     }
     if(best!==null){
@@ -80,12 +87,26 @@ export function createTeamPilot({windAt,targetX=0,targetZ=0,airspace,getHeight=(
   }
   return {
     control(pos,vy,dt,heat=.5){
-      untilScan-=dt;
+      lastVy=vy;lastHeat=heat;untilScan-=dt;dropCheck-=dt;
       if(untilScan<=0||target===null){target=pick(pos,vy,heat);untilScan=4;}
       if(target===null)return {burner:false,rip:true,blocked:true};
       return heightControl(pos.y,vy,heat,target);
     },
-    shouldDrop(pos){return !drop&&clearance&&Math.hypot(pos.x-targetX,pos.z-targetZ)<=400;},
+    suggestAltitude(alt){if(Number.isFinite(alt)){observedAltitudes.push(alt);if(observedAltitudes.length>20)observedAltitudes.shift();untilScan=0;}},
+    usesObservation(r,pos){return target!==null&&Math.abs(target-r.y)<120&&Math.hypot(pos.x-r.x,pos.z-r.z)<1500;},
+    shouldDrop(pos){
+      if(drop||!clearance)return false;
+      if(!planMarker)return Math.hypot(pos.x-targetX,pos.z-targetZ)<=400;
+      if(dropCheck>0)return false;dropCheck=.5;
+      const landing=markerLanding(pos,lastVy,forecastWindAt,getHeight);
+      const distance=Math.hypot(landing.x-targetX,landing.z-targetZ);
+      if(distance<=25)return true;
+      if(distance>400)return false;
+      let future={...pos,vy:lastVy,heat:lastHeat,grounded:false};
+      for(let i=0;i<10;i++)future=predictStep(future,.5,heightControl(future.y,future.vy,future.heat,target),forecastWindAt,getHeight);
+      const next=markerLanding(future,future.vy,forecastWindAt,getHeight);
+      return Math.hypot(next.x-targetX,next.z-targetZ)>=distance;
+    },
     markDropped(){drop=true;},
     dropNotice(pos){
       if(drop||notified)return null;

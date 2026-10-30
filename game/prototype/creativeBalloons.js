@@ -94,7 +94,7 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds,
     group.add(mesh);
     const valid=!airspace || !flightViolation(pos,airspace,getHeight);
     mesh.visible=valid;
-    return { mesh, pos, active:valid, vy: 0, heat: 0.5, burner: false, rip: false, profile,
+    return { id:`traffic-${index}`, mesh, pos, active:valid, vy: 0, heat: 0.5, burner: false, rip: false, profile,
       pilot: airspace ? createTeamPilot({windAt,airspace,getHeight,targetX:profile.dx,targetZ:profile.dz})
         : createBalloonAutopilot({ windAt,targetX: profile.dx, targetZ: profile.dz, cruiseScanFt: profile.cruise }) };
   });
@@ -144,5 +144,6 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds,
     }
   }
   return { group, update, positions: () => balloons.map(balloon => balloon.pos),
+    observations: () => balloons.filter(b=>b.active).map(b=>({id:b.id,name:`${['赤','橙','紫','緑','桃'][TRAFFIC.indexOf(b.profile)]}の${TRAFFIC.indexOf(b.profile)+2}号気球`,x:b.pos.x,y:b.pos.y,z:b.pos.z})),
     soundSources: () => balloons.filter(b=>b.active).map(({ pos, burner, rip }) => ({ pos, burner, rip })) };
 }

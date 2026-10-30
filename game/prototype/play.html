@@ -396,6 +396,9 @@
   .creative-world #setup-link, .creative-world #howto-link, .creative-world .mode-separator { display: none; }
   #creative-note { color: #b9cec4; margin-top: 6px; max-width: 320px; line-height: 1.6; }
   #loading .logo { font-size: clamp(22px, 5vw, 36px); letter-spacing: .08em; }
+  .chase-mode #help { max-height: calc(100dvh - 120px); max-width: min(94vw,650px); overflow-y:auto; }
+  #radio-balloon { max-width:100%; padding:6px; }
+  #radio-creative button, #radio-confirm button { min-height:44px; margin:3px; }
   #chase-mission { margin-top: 8px; font-size: 12px; }
   #chase-mission p { margin: 6px 0; line-height: 1.6; }
   #chase-radio-log { white-space: pre-line; max-height: 160px; overflow-y: auto; }
@@ -773,8 +776,21 @@
   <p id="terrain-error" role="status" hidden><span id="terrain-error-text"></span> <a href="" id="terrain-reload">再読み込み（最初から）</a></p>
   <details id="chase-mission" hidden>
     <summary>回収ミッション · <strong id="chase-score">0 点</strong></summary>
-    <p>ターゲットから100〜400mの場所で停車し、地上風を報告すると50点（1回）。<br>チームのパイロットがマーカーを投下します。着地時に車が30m以内なら1,000点。間に合わなくても、着地後に30m以内へ近づくと500点です。</p>
+    <p id="mission-legacy">ターゲットから100〜400mの場所で停車し、地上風を報告すると50点（1回）。<br>投下確認で50点。ターゲット周囲100mは車の進入禁止です。区域内は着地確認で1,000点、計測班が回収します。区域外は着地時に車が30m以内なら1,000点、着地後の回収は500点です。</p>
     <p>制限時間30分以内に投下。投下済みなら時間切れ後も回収できます。地上風はゲーム内の風で、無線は文字で表示します。</p>
+    <div id="radio-creative" hidden>
+      <p>橙色の境界から内側100mは計測班の作業区域です。車は入れません。区域内のマーカーは計測班が回収します。</p>
+      <p>他の気球の直下から水平200m以内で停車し、10秒観測して報告すると20点。新しい観測は同じ気球でも30秒ごとに報告できます。後の動きとの照合で有益と確認できた情報には追加50〜100点。高度は海抜ftです。</p>
+      <label for="radio-balloon">観測する気球</label>
+      <select id="radio-balloon"><option value="">近くに観測できる気球がありません</option></select>
+      <p id="radio-observation-hint" role="status"></p>
+      <button id="radio-wind-send" type="button" disabled>上空風を報告 ＋20点</button>
+    </div>
+    <div id="radio-confirm" hidden>
+      <p id="radio-confirm-hint" role="status"></p>
+      <button id="radio-drop" type="button" disabled>投下確認 ＋50点</button>
+      <button id="radio-landing" type="button" disabled>区域内着地確認 1,000点</button>
+    </div>
     <button id="chase-report" type="button" disabled>地上風を報告（C）</button>
     <p id="chase-report-hint">ターゲット付近で停車してください</p>
     <details><summary>無線の記録</summary><p id="chase-radio-log">まだ通信はありません</p></details>
