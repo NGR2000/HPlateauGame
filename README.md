@@ -108,6 +108,6 @@ python3 -m http.server 8002 --bind 127.0.0.1
 
 **従来の「main のルートから公開」は使用しないでください。** 開発ページが配信されるため、変更を公開する前に Settings → Pages → Build and deployment → Source を **GitHub Actions** に切り替えます。
 
-`.github/workflows/pages.yml` はpush・PR時にはテスト・依存関係監査・ビルドだけを行います。公開は Actions → Validate and deploy public game → Run workflow で `main` を選んで明示的に実行してください。PagesのSourceがGitHub Actionsになっていることをワークフローでも確認し、`dist` だけを公開します。開発モジュールが公開コードの依存先に入った場合はビルドが失敗します。環境の自動セットアップ用の保存手順とは別の公開設定です。
+`.github/workflows/pages.yml` はpush・PR時にはテスト・依存関係監査・ビルドだけを行います。公開はコミットメッセージの先頭に `[publish]` を付けてmainへ反映するか、Actions → Validate and deploy public game → Run workflow で `main` を選んで明示的に実行してください。PagesのSourceがGitHub Actionsになっていることをワークフローでも確認し、`dist` だけを公開します。開発モジュールが公開コードの依存先に入った場合はビルドが失敗します。環境の自動セットアップ用の保存手順とは別の公開設定です。
 
 将来対応のローカル検討資料は `.local-planning/` に置き、Git管理から除外します。
