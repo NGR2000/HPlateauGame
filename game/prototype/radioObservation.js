@@ -1,4 +1,6 @@
 // Observation clocks and expiry use simulation seconds. Positions/heights stay in metres.
+export const MARKER_DRAG = 9.81/10;
+export const MARKER_WIND_TAU = 1.5;
 export const OBSERVATION_SECONDS = 10;
 export const REPORT_INTERVAL = 30;
 export const TARGET_ZONE_RADIUS = 100;
@@ -10,7 +12,7 @@ export function createWindKnowledge(baseWind, now=()=>0) {
     let best=null,weight=0;
     for(const r of records){
       const age=t-r.time;
-      const w=age>=0&&age<180 ? (1-age/180)*Math.max(0,1-Math.abs(y-r.y)/120)*Math.max(0,1-Math.hypot(x-r.x,z-r.z)/1500)*r.confidence : 0;
+      const w=age>=0&&age<180 ? Math.min(1,(180-age)/120)*Math.max(0,Math.min(1,(120-Math.abs(y-r.y))/90))*Math.max(0,Math.min(1,(1500-Math.hypot(x-r.x,z-r.z))/700))*r.confidence : 0;
       if(w>weight){best=r;weight=w;}
     }
     if(!best)return base;
@@ -66,8 +68,8 @@ export function markerLanding(pos,vy,windAt,getHeight){
   y+=.8;
   for(let t=0;t<240;t+=.5){
     wind=windAt(y,x,z);
-    vy+=(-9.81-(9.81/10)*vy)*.5;
-    vx+=(wind.vx-vx)/1.5*.5;vz+=(wind.vz-vz)/1.5*.5;
+    vy+=(-9.81-MARKER_DRAG*vy)*.5;
+    vx+=(wind.vx-vx)/MARKER_WIND_TAU*.5;vz+=(wind.vz-vz)/MARKER_WIND_TAU*.5;
     x+=vx*.5;z+=vz*.5;y+=vy*.5;
     if(y<=getHeight(x,z))return {x,z};
   }

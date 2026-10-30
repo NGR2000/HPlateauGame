@@ -1,0 +1,17 @@
+{
+  "name": "hplateau-game",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build": "node tools/build-site.mjs",
+    "prepare:vendor": "node tools/build-site.mjs --vendor-only",
+    "audit": "npm audit --omit=dev --audit-level=low"
+  },
+  "dependencies": {
+    "three": "0.160.0"
+  }
+}

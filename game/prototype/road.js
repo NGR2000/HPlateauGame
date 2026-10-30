@@ -22,6 +22,7 @@
 //   - 道路データは2D。高さは terrain.js の getHeight で地形に貼る
 import * as THREE from 'three';
 import { lonLatToTile } from './terrain.js';
+import { fetchBytes, dataError } from './safeFetch.js';
 
 const BVMAP = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap';
 const ROAD_Z = 14;               // 単一ズーム。ここを変えるとグローバル整数統合の前提が崩れる
@@ -51,29 +52,37 @@ export const isMotorway = (p) => p.motorway === 1 || p.rdCtg === 3 || p.tollSect
 
 class PbfReader {
   constructor(bytes, end = bytes.length) { this.b = bytes; this.p = 0; this.end = end; }
+  require(n) {
+    if (!Number.isSafeInteger(n) || n < 0 || this.p + n > this.end) throw dataError('道路データが途中で終了しています');
+  }
   varint() {
-    let r = 0, s = 0, b;
-    do { b = this.b[this.p++]; r += (b & 0x7f) * 2 ** s; s += 7; } while (b & 0x80);
-    return r;
+    let result = 0;
+    for (let shift = 0; shift <= 49; shift += 7) {
+      this.require(1);
+      const value = this.b[this.p++];
+      result += (value & 0x7f) * 2 ** shift;
+      if (!Number.isSafeInteger(result)) throw dataError('道路データの整数が大きすぎます');
+      if (!(value & 0x80)) return result;
+    }
+    throw dataError('道路データの整数が長すぎます');
   }
   skip(wire) {
-    // 複合代入だと this.p が varint 前の値で読まれるので、長さを先に取り出す
     if (wire === 0) this.varint();
-    else if (wire === 2) { const n = this.varint(); this.p += n; }
-    else if (wire === 5) this.p += 4;
-    else if (wire === 1) this.p += 8;
-    else throw new Error(`未知の wire type: ${wire}`);
+    else if (wire === 2) { const n = this.varint(); this.require(n); this.p += n; }
+    else if (wire === 5) { this.require(4); this.p += 4; }
+    else if (wire === 1) { this.require(8); this.p += 8; }
+    else throw dataError('道路データの wire type が不正です');
   }
   sub() {
-    const len = this.varint();
+    const len = this.varint(); this.require(len);
     const r = new PbfReader(this.b, this.p + len);
-    r.p = this.p;
-    this.p += len;
+    r.p = this.p; this.p += len;
     return r;
   }
   str() {
-    const len = this.varint();
-    const s = new TextDecoder().decode(this.b.subarray(this.p, this.p + len));
+    const len = this.varint(); this.require(len);
+    if (len > 4096) throw dataError('道路データの文字列が長すぎます');
+    const s = new TextDecoder('utf-8', { fatal: true }).decode(this.b.subarray(this.p, this.p + len));
     this.p += len;
     return s;
   }
@@ -87,15 +96,22 @@ function decodeGeometry(gr) {
   let cur = null, x = 0, y = 0;
   while (gr.p < gr.end) {
     const cmd = gr.varint();
-    const id = cmd & 7, count = cmd >> 3;
+    if (cmd > 0xffffffff) throw dataError('道路のジオメトリ命令が不正です');
+    const id = cmd & 7, count = cmd >>> 3;
+    if (!count || count > 25000 || ![1, 2, 7].includes(id)) throw dataError('道路の頂点数が不正です');
+    if (id === 7) { if (count !== 1) throw dataError('道路の閉路命令が不正です'); continue; }
+    if (id === 2 && !cur) throw dataError('道路の始点がありません');
     for (let i = 0; i < count; i++) {
       if (id === 1) {          // MoveTo = 新しい線の始まり
         x += unzig(gr.varint()); y += unzig(gr.varint());
+        if (Math.abs(x) > 524288 || Math.abs(y) > 524288) throw dataError('道路の座標が範囲外です');
         cur = [x, y];
         lines.push(cur);
       } else if (id === 2) {   // LineTo
         x += unzig(gr.varint()); y += unzig(gr.varint());
+        if (Math.abs(x) > 524288 || Math.abs(y) > 524288) throw dataError('道路の座標が範囲外です');
         cur.push(x, y);
+        if (cur.length > 50000) throw dataError('道路の頂点数が多すぎます');
       } else break;            // ClosePath は道路には現れない
     }
   }
@@ -118,35 +134,50 @@ function decodeFeature(fr) {
   const feat = { type: 0, lines: [], tags: [] };
   while (fr.p < fr.end) {
     const t = fr.varint(), f = t >> 3, w = t & 7;
-    if (f === 3) feat.type = fr.varint();
-    else if (f === 4) feat.lines = decodeGeometry(fr.sub());
-    else if (f === 2 && w === 2) { const tr = fr.sub(); while (tr.p < tr.end) feat.tags.push(tr.varint()); }
+    if (f === 3 && w === 0) feat.type = fr.varint();
+    else if (f === 4 && w === 2) feat.lines = decodeGeometry(fr.sub());
+    else if (f === 2 && w === 2) { const tr = fr.sub(); while (tr.p < tr.end) { if (feat.tags.length >= 128) throw dataError('道路の属性が多すぎます'); feat.tags.push(tr.varint()); } }
     else fr.skip(w);
   }
   return feat;
 }
 
 // pbf 全体から road レイヤだけを取り出す(他のレイヤは読み飛ばす)
-function decodeRoadLayer(bytes) {
+export function decodeRoadLayer(bytes) {
   const r = new PbfReader(bytes);
   while (r.p < r.end) {
     const tag = r.varint();
-    if (tag >> 3 !== 3) { r.skip(tag & 7); continue; }
+    if (tag >> 3 !== 3 || (tag & 7) !== 2) { r.skip(tag & 7); continue; }
     const lr = r.sub();
     const layer = { name: '', extent: 4096, features: [], keys: [], values: [] };
     while (lr.p < lr.end) {
       const lt = lr.varint(), f = lt >> 3;
-      if (f === 1) layer.name = lr.str();
-      else if (f === 5) layer.extent = lr.varint();
-      else if (f === 2) layer.features.push(decodeFeature(lr.sub()));
-      else if (f === 3) layer.keys.push(lr.str());
-      else if (f === 4) layer.values.push(decodeValue(lr.sub()));
+      if (f === 1 && (lt & 7) === 2) layer.name = lr.str();
+      else if (f === 5 && (lt & 7) === 0) layer.extent = lr.varint();
+      else if (f === 2 && (lt & 7) === 2) layer.features.push(decodeFeature(lr.sub()));
+      else if (f === 3 && (lt & 7) === 2) layer.keys.push(lr.str());
+      else if (f === 4 && (lt & 7) === 2) layer.values.push(decodeValue(lr.sub()));
       else lr.skip(lt & 7);
+      if (layer.features.length > 10000 || layer.keys.length > 1024 || layer.values.length > 20000) {
+        throw dataError('道路レイヤーの要素数が多すぎます');
+      }
     }
     if (layer.name !== 'road') continue;
+    if (layer.extent < 256 || layer.extent > 65536) throw dataError('道路の縮尺が不正です');
+    let vertices = 0;
     for (const ft of layer.features) {
-      ft.props = {};
-      for (let i = 0; i + 1 < ft.tags.length; i += 2) ft.props[layer.keys[ft.tags[i]]] = layer.values[ft.tags[i + 1]];
+      ft.props = Object.create(null);
+      if (ft.tags.length % 2) throw dataError('道路の属性番号が不正です');
+      for (let i = 0; i < ft.tags.length; i += 2) {
+        if (ft.tags[i] >= layer.keys.length || ft.tags[i + 1] >= layer.values.length) throw dataError('道路の属性参照が範囲外です');
+        ft.props[layer.keys[ft.tags[i]]] = layer.values[ft.tags[i + 1]];
+      }
+      for (const line of ft.lines) {
+        vertices += line.length / 2;
+        if (vertices > 50000 || line.some(value => Math.abs(value) > layer.extent * 8)) {
+          throw dataError('道路の頂点数または座標が上限を超えています');
+        }
+      }
     }
     return layer;
   }
@@ -197,6 +228,12 @@ export async function loadRoads({
   centerLon, centerLat, getHeight,
   radiusM = 3000, streamRadiusM = 2500, maxTilesTotal = 48, onProgress,
 }) {
+  if (![centerLon, centerLat, radiusM, streamRadiusM].every(Number.isFinite)
+      || centerLon < 122 || centerLon > 148 || centerLat < 24 || centerLat > 46
+      || radiusM <= 0 || radiusM > 10000 || streamRadiusM <= 0 || streamRadiusM > 10000
+      || !Number.isInteger(maxTilesTotal) || maxTilesTotal < 1 || maxTilesTotal > 64) {
+    throw dataError('道路の取得範囲が不正です');
+  }
   const stats = {
     tilesLoaded: 0, bytes: 0,
     centerlines: 0, skippedEdgeLines: 0,
@@ -229,11 +266,9 @@ export async function loadRoads({
 
     let layer = null;
     try {
-      const res = await fetch(`${BVMAP}/${ROAD_Z}/${tx}/${ty}.pbf`);
-      if (!res.ok) return [];        // 道路が無い範囲。エラーにしない
-      const buf = await res.arrayBuffer();
-      stats.bytes += buf.byteLength;
-      layer = decodeRoadLayer(new Uint8Array(buf));
+      const bytes = await fetchBytes(`${BVMAP}/${ROAD_Z}/${tx}/${ty}.pbf`, { maxBytes: 2 * 1024 * 1024 });
+      stats.bytes += bytes.byteLength;
+      layer = decodeRoadLayer(bytes);
       stats.tilesLoaded++;
     } catch (err) {
       console.warn('道路タイルの読み込みに失敗:', tx, ty, err);
@@ -262,6 +297,7 @@ export async function loadRoads({
         const b = `${pts[pts.length - 2]}_${pts[pts.length - 1]}`;
         if (a === b) continue;
         const ek = a < b ? `${a}|${b}` : `${b}|${a}`;
+        if (edges.size >= 100000) { stats.capped = true; return added; }
         if (edges.has(ek)) continue;                  // 隣接タイルとの重複を二重に持たない
 
         // 世界座標(m)に直しておく。描画と車の走行の両方がこれを使う
@@ -315,7 +351,8 @@ export async function loadRoads({
         const len = Math.hypot(x2 - x1, z2 - z1);
         stats.lengthM += len;
         // 地形の起伏に沿わせるため、長い区間は分割して標高を拾い直す
-        const n = Math.max(1, Math.ceil(len / DRAPE_STEP));
+        const n = Math.min(4096, Math.max(1, Math.ceil(len / DRAPE_STEP)));
+        if (positions.length + n * 6 > 1500000) { stats.capped = true; break; }
         for (let s = 0; s < n; s++) {
           const t1 = s / n, t2 = (s + 1) / n;
           push(x1 + (x2 - x1) * t1, z1 + (z2 - z1) * t1, x1 + (x2 - x1) * t2, z1 + (z2 - z1) * t2);
@@ -341,7 +378,7 @@ export async function loadRoads({
       compSize.set(root, (compSize.get(root) || 0) + 1);
     }
     stats.components = compSize.size;
-    stats.largestComponentRatio = nodes.size > 0 ? Math.max(0, ...compSize.values()) / nodes.size : 0;
+    stats.largestComponentRatio = nodes.size > 0 ? [...compSize.values()].reduce((max, size) => Math.max(max, size), 0) / nodes.size : 0;
 
     stats.deg1 = stats.deg2 = stats.deg3 = stats.deg4plus = 0;
     for (const n of nodes.values()) {
@@ -365,6 +402,7 @@ export async function loadRoads({
 
   // 世界座標(m)の点のまわりで、まだ読んでいないタイルを近い順に並べる
   function wantTiles(x, z, r) {
+    if (![x, z, r].every(Number.isFinite) || Math.abs(x) > 100000 || Math.abs(z) > 100000 || r <= 0 || r > 10000) return [];
     const fx = c.x + x / tileMeters;
     const fy = c.y + z / tileMeters;
     const span = Math.ceil(r / tileMeters);

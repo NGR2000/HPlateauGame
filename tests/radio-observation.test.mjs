@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRadioObserver,createWindKnowledge,observationBonus,insideTargetZone,markerLanding} from '../game/prototype/radioObservation.js';
 import {creativePoints,confirmationStatus} from '../game/prototype/chaseRules.js';
-import {createTeamPilot} from '../game/prototype/creativeAirspace.js';
+import {createTeamPilot,predictStep} from '../game/prototype/creativeAirspace.js';
 
 test('live observations require ten seconds; repeats require a fresh interval; movement, disappearance and respawn reset tracks',()=>{
   const observer=createRadioObserver(),car={x:0,z:0,speedMps:0};
@@ -64,4 +64,35 @@ test('marker forecast follows the real terminal speed and horizontal drag instea
   let x=0,y=300.8,vy=0;
   for(let t=0;t<100;t+=1/60){vy+=(-9.81-.981*vy)/60;y+=vy/60;x+=3/60;if(y<=0)break;}
   assert.ok(Math.abs(landing.x-x)<4);assert.equal(landing.z,0);
+});
+
+test('fresh live wind reports improve an actual marker landing in a paired approach with identical physics',()=>{
+  const base=y=>({vx:y<180?3:1,vz:y<180?.5:2,kt:6});
+  const actual=y=>y<180?base(y):({vx:6,vz:0,kt:12});
+  function fly(sendReports){
+    let time=0,nextReport=0;
+    const knowledge=createWindKnowledge(base,()=>time);
+    const pilot=createTeamPilot({windAt:actual,forecastWindAt:knowledge.windAt,planMarker:true,
+      getHeight:()=>0,airspace:{ceiling:600,zones:[]},targetX:1200});
+    let state={x:0,y:300,z:0,vy:0,heat:.5,grounded:false};
+    for(;time<600;time+=.2){
+      if(sendReports&&time+1e-6>=nextReport){
+        nextReport+=30;const w=actual(300);
+        knowledge.add({source:'observed-balloon',x:state.x,z:state.z,y:300,time,vx:w.vx,vz:w.vz,confidence:.9});
+        pilot.suggestAltitude(300);
+      }
+      const control=pilot.control(state,state.vy,.2,state.heat);
+      assert.ok(!control.blocked);
+      state=predictStep(state,.2,control,actual,()=>0);
+      assert.ok(state.y+28<=600);
+      if(pilot.shouldDrop(state)){
+        const landing=markerLanding(state,state.vy,actual,()=>0);
+        return Math.hypot(landing.x-1200,landing.z);
+      }
+    }
+    throw Error('No marker drop in the approach');
+  }
+  const without=fly(false),withReports=fly(true);
+  assert.ok(withReports<100,`reported approach misses by ${withReports}m`);
+  assert.ok(withReports<without-30,`report ${withReports}m versus no report ${without}m`);
 });
