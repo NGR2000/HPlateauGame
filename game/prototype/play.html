@@ -373,6 +373,22 @@
     #chase-quick > :not([hidden]) { padding: 6px 8px; }
     #chase-radio-log { max-height: 110px; }
   }
+
+  /* Keep the driving view clear on desktop as well as touch devices. */
+  .chase-mode #mobile-menu:not([hidden]) { display:block;position:fixed;top:max(8px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));z-index:8;color:#e8f0f6;font:13px "Yu Gothic UI",sans-serif; }
+  .chase-mode #mobile-menu > summary { list-style:none;width:fit-content;margin-left:auto;min-height:44px;padding:0 12px;display:flex;align-items:center;box-sizing:border-box;border:1px solid #345a7a;border-radius:10px;background:rgba(16,26,36,.72);cursor:pointer; }
+  .chase-mode #mobile-menu > summary::-webkit-details-marker {display:none;}
+  .chase-mode #mobile-menu-content { margin-top:6px;padding:10px;width:min(340px,calc(100vw - 40px));max-height:calc(100dvh - 120px);overflow-y:auto;border-radius:10px;background:rgba(10,20,30,.94); }
+  .chase-mode #mobile-menu .panel { position:static;transform:none;min-width:0;max-width:none;background:none;margin-top:8px;padding:8px 0;text-align:left; }
+  .chase-mode #mobile-menu #help,.chase-mode #mobile-menu #credit {max-width:none;font-size:11px;max-height:none;overflow:visible;}
+  .chase-mode #pause-btn {position:static;transform:none;min-height:44px;margin-bottom:8px;}
+  #chase-resume { position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:8;min-height:44px;padding:8px 18px;border:1px solid #caac53;border-radius:8px;background:#dfbd55;color:#1a170d;cursor:pointer; }
+  #radio-card {max-width:300px;pointer-events:auto;}
+  #radio-context {margin-bottom:4px;}
+  #radio-target-controls {display:flex;align-items:center;gap:10px;margin:6px 0;}
+  #radio-target-controls[hidden],#radio-card[hidden],#chase-resume[hidden] {display:none;}
+  #radio-target-controls button {min-width:44px;min-height:44px;color:#d7edec;background:#203d48;border:1px solid #5a7c88;border-radius:6px;font-size:22px;cursor:pointer;}
+  #chase-report-quick {width:100%;margin-top:4px;}
 </style>
 </head>
 <body>
@@ -486,6 +502,7 @@
 
 
 <button id="pause-btn" type="button" hidden>⏸ 一時停止</button>
+<button id="chase-resume" type="button" hidden>▶ 再開</button>
 
 <canvas id="compass" width="150" height="150"></canvas>
 
@@ -551,7 +568,15 @@
 
 <div id="chase-quick" hidden>
   <div id="chase-toast" role="status" aria-live="polite" hidden></div>
-  <button id="chase-report-quick" type="button" hidden>地上風を報告 ＋50点</button>
+  <section id="radio-card" hidden aria-label="無線送信">
+    <div id="radio-context" role="status" aria-live="polite"></div>
+    <nav id="radio-target-controls" hidden aria-label="観測対象を切り替える">
+      <button id="radio-target-prev" type="button" aria-label="前の気球">‹</button>
+      <span id="radio-target-count"></span>
+      <button id="radio-target-next" type="button" aria-label="次の気球">›</button>
+    </nav>
+    <button id="chase-report-quick" type="button" hidden>報告する</button>
+  </section>
   <div id="chase-recovery" hidden></div>
 </div>
 

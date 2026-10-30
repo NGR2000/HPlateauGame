@@ -1,3 +1,4 @@
+import {radioCard} from './radioCard.js';
 import { parseFlightSettings, validateWind, buildShareQuery, validStartTime, FLIGHT_LIMITS } from './flightSettings.js';
 import { createTileLoader } from './tileLoader.js';
 // 熱気球フライト プロトタイプ
@@ -517,6 +518,7 @@ function cycleOrbitTarget() {
 }
 function togglePibal() {
   const p = document.getElementById('pibal');
+  if(chaseMode){p.style.display='';p.open=!p.open;if(p.open)document.getElementById('mobile-menu').open=true;return;}
   p.style.display = p.style.display === 'none' ? '' : 'none';
 }
 function cycleTimeScale() {
@@ -532,8 +534,11 @@ function togglePause() {
   const btn = document.getElementById('pause-btn');
   btn.textContent = paused ? '▶ 再開' : '⏸ 一時停止';
   btn.classList.toggle('active', paused);
+  if(chaseMode)document.getElementById('mobile-menu').open=false;
+  document.getElementById('chase-resume').hidden=!chaseMode||!paused||chaseRace.finished;
 }
 document.getElementById('pause-btn').addEventListener('click', togglePause);
+document.getElementById('chase-resume').addEventListener('click', togglePause);
 
 addEventListener('keydown', (e) => {
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
@@ -1452,7 +1457,6 @@ function updateChaseMission() {
     moving: '停車すると地上風を報告できます', ready: '地上風を報告できます（1回50点）' };
   document.getElementById('chase-report-hint').textContent = messages[status];
   document.getElementById('chase-report').disabled = status !== 'ready';
-  document.getElementById('chase-report-quick').hidden=false;
   updateRadioUi();
   let navigation = '';
   if (marker.state?.landed && !chaseRace.finished && !chaseRace.landingInZone) {
@@ -1504,20 +1508,29 @@ function updateRadioUi(){
     '計測班が回収します。区域外100〜400mで停車して着地確認を送ってください。':
     marker.state?.landed?'区域外に着地しました。車で回収してください。':marker.state?
     '投下を見届けたら、投下地点から1,500m以内で停車して投下確認を送れます。':'投下確認＋50点 / 区域内着地確認は回収成功と同じ1,000点。';
-  $('chase-report-quick').textContent=c.drop?'投下確認 ＋50点':c.landing?'区域内着地確認 1,000点':
-    b?.ready?'上空風を報告 ＋20点':reportStatus()==='ready'?'地上風を報告 ＋50点':'無線を開く（C）';
+  const card=radioCard({finished:chaseRace.finished,confirmation:c,stationary,balloon:b,groundReady:reportStatus()==='ready'});
+  $('radio-card').hidden=!card;
+  $('chase-report-quick').hidden=!card?.enabled;
+  if(card){
+    $('chase-report-quick').textContent=card.label;
+    const context=card.kind==='wind'||card.kind==='observing'?$('radio-observation-hint').textContent:
+      card.kind==='ground'?'停車中 · この地点の地上風を報告できます':card.kind==='drop'?'マーカーの投下を見届けたら送信':'計測班が回収します。区域内への着地を確認して送信';
+    if($('radio-context').textContent!==context)$('radio-context').textContent=context;
+  }
+  $('radio-target-controls').hidden=!card||!['wind','observing'].includes(card.kind)||choices.length<2;
+  $('radio-target-count').textContent=`${Math.max(0,choices.findIndex(v=>v.id===select.value))+1} / ${choices.length}`;
+
 }
 function sendRadioQuick(){
   const c=radioConfirmations();
   if(c.drop)return confirmDrop();if(c.landing)return confirmZoneLanding();
   const b=radioObserver.choices().find(b=>b.id===document.getElementById('radio-balloon').value);
-  if(b?.ready)return sendUpperWind();
+  if(b?.ready&&Math.abs(raceCar.info().speedMps)<=.05)return sendUpperWind();
   if(reportStatus()==='ready')return sendTargetWindReport();
-  document.getElementById('chase-mission').open=true;
-  if(matchMedia('(pointer: coarse)').matches)document.getElementById('mobile-menu').open=true;
+  // No available action: leave the view unobstructed.
 }
 function sendUpperWind(){
-  if(chaseRace.finished||!creativeWorld)return;
+  if(chaseRace.finished||!creativeWorld||Math.abs(raceCar.info().speedMps)>.05)return;
   const report=radioObserver.send(document.getElementById('radio-balloon').value,flightSeconds);
   if(!report)return;
   const before=windKnowledge.snapshot();windKnowledge.add(report);const after=windKnowledge.snapshot();
@@ -1555,6 +1568,7 @@ function finishChase(caught, afterLanding, note) {
   input.burner = input.rip = false;
   resetRaceControls?.();
   document.getElementById('pause-btn').disabled = true;
+  document.getElementById('chase-resume').hidden=true;
   const points = creativePoints(chaseRace);
   let best = 0;
   try {
@@ -1789,6 +1803,13 @@ document.getElementById('radio-wind-send').addEventListener('click',sendUpperWin
 document.getElementById('radio-drop').addEventListener('click',confirmDrop);
 document.getElementById('radio-landing').addEventListener('click',confirmZoneLanding);
 document.getElementById('radio-balloon').addEventListener('change',updateRadioUi);
+function cycleRadioTarget(direction){
+  const select=document.getElementById('radio-balloon'),n=select.options.length;
+  if(n<2)return;
+  select.selectedIndex=(select.selectedIndex+direction+n)%n;updateRadioUi();
+}
+document.getElementById('radio-target-prev').addEventListener('click',()=>cycleRadioTarget(-1));
+document.getElementById('radio-target-next').addEventListener('click',()=>cycleRadioTarget(1));
 
 // ---- コンパス(カメラの向き=画面正面の磁方位。ターゲット方向をオレンジ印で表示) ----
 const compassCv = document.getElementById('compass');
@@ -1969,12 +1990,15 @@ function applyRaceHudMode() {
   document.getElementById('tc-driving').hidden = false;
   document.getElementById('tc-overview').hidden = false;
   document.getElementById('tc-view').textContent = '視点';
-  if (isTouchDevice) {
-    document.getElementById('tc-toolbar').append(document.getElementById('pause-btn'));
+  {
+    // The same compact menu is available on desktop and touch devices.
     const menu = document.getElementById('mobile-menu');
     menu.hidden = false;
     const content = document.getElementById('mobile-menu-content');
-    for (const id of ['tc-toolbar', 'help', 'instruments', 'credit']) {
+    content.append(document.getElementById('pause-btn'));
+    const menuPanels=['tc-toolbar','pibal','help','credit'];
+    if(isTouchDevice)menuPanels.push('instruments');
+    for (const id of menuPanels) {
       content.append(document.getElementById(id));
     }
     // 視点を選んだらすぐ景色へ戻す。一時停止中は再開ボタンを見せておく。
@@ -1988,7 +2012,7 @@ function applyRaceHudMode() {
   document.getElementById('target-label').textContent = '気球→ターゲット';
   const normalHelp = document.getElementById('help-keys');
   const raceHelp = document.getElementById('help-keys-race');
-  raceHelp.open = normalHelp.open; // 開閉状態(devModeかどうかで既に決まっている)を引き継ぐ
+  raceHelp.open = false;
   normalHelp.style.display = 'none';
   raceHelp.style.display = '';
   // 一時停止ボタンは既定で hidden 属性を付けて隠してある。chaseMode のときだけ外して出す
@@ -1996,13 +2020,14 @@ function applyRaceHudMode() {
   // コンパスのターゲット方位(オレンジの印)は気球基準(state.pos)で計算されており、
   // 車を運転するチェイスモードでは向きがずれて誤解を招く。車基準に作り直すのではなく、
   // このモードでは単純に隠す(下のレンダーループの drawCompass() 呼び出し自体も止める)。
-  // 空いた画面下中央に一時停止ボタンを置く
+  // 一時停止はメニュー内、停止中のみ画面下に再開ボタンを表示する
   document.getElementById('compass').style.display = 'none';
   // instruments/pibal/credit の3つだけが対象(いずれもタッチ端末判定より前の
   // 分岐で .open = true にされているので、ここで上書きする)
   document.getElementById('instruments').open = false;
   document.getElementById('pibal').open = false;
   document.getElementById('credit').open = false;
+  document.getElementById('chase-mission').open=false;
   updateRaceControlsEnabled();
 }
 
