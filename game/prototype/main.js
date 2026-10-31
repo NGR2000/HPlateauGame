@@ -1500,7 +1500,10 @@ function updateRadioUi(){
   const stationary=car&&Math.abs(car.speedMps)<=.05;
   const altitude=b?` · 約${Math.round(b.y*M2FT/50)*50}ft MSL`:'';
   $('radio-observation-hint').textContent=!stationary?'停車して観測してください':!b?'他の気球の直下から水平200m以内へ移動してください':
-    b.cooldown>0?`${b.name}${altitude} · 再送信まで${Math.ceil(b.cooldown)}秒・再観測中`:
+    b.cooldown>0||b.distanceRemaining>0?`${b.name}${altitude} · ${[
+      b.cooldown>0?`再報告まで${Math.ceil(b.cooldown)}秒`:'',
+      b.distanceRemaining>0?`前回の報告地点からあと${Math.ceil(b.distanceRemaining)}m移動`:''
+    ].filter(Boolean).join('・')}`:
     b.ready?`${b.name}${altitude} · 新しい上空風を報告できます（＋20点）`:`${b.name}${altitude} · 観測 ${Math.floor(b.seconds)}/10秒`;
   $('radio-wind-send').disabled=!chaseRace.reported||!b?.ready||chaseRace.finished;
   if(!chaseRace.reported)$('radio-observation-hint').textContent='ターゲット付近で地上風を報告すると、他機の上空風を観測できます。';

@@ -11,15 +11,17 @@ test('live observations require ten seconds; repeats require a fresh interval; m
   assert.equal(observer.update(10,car,[balloon(10)])[0].ready,true);
   const report=observer.send('red',10);assert.equal(report.vx,1);assert.equal(report.vz,0);
   assert.equal(observer.send('red',10),null);
-  for(let t=11;t<40;t++)assert.equal(observer.update(t,car,[balloon(t)])[0].ready,false);
-  assert.equal(observer.update(40,car,[balloon(40)])[0].ready,true);
-  assert.ok(observer.send('red',40));
-  observer.update(41,{...car,speedMps:1},[balloon(41)]);
-  assert.equal(observer.update(42,car,[balloon(42)])[0].ready,false);
-  observer.update(43,car,[]);
-  assert.equal(observer.update(44,car,[balloon(44)])[0].seconds,0);
-  assert.equal(observer.update(45,car,[{...balloon(45),x:150}])[0].seconds,0);
-  assert.equal(observer.update(46,car,[{...balloon(46),y:150}])[0].seconds,0);
+  for(let t=11;t<=190;t++)assert.equal(observer.update(t,car,[balloon(t)])[0].ready,false);
+  const moved={...car,x:300};
+  for(let t=191;t<201;t++)assert.equal(observer.update(t,moved,[balloon(t)])[0].ready,false);
+  assert.equal(observer.update(201,moved,[balloon(201)])[0].ready,true);
+  assert.ok(observer.send('red',201));
+  observer.update(202,{...moved,speedMps:1},[balloon(202)]);
+  assert.equal(observer.update(203,moved,[balloon(203)])[0].ready,false);
+  observer.update(204,moved,[]);
+  assert.equal(observer.update(205,moved,[balloon(205)])[0].seconds,0);
+  assert.equal(observer.update(206,moved,[{...balloon(206),x:150}])[0].seconds,0);
+  assert.equal(observer.update(207,moved,[{...balloon(207),y:150}])[0].seconds,0);
 });
 test('wind knowledge is local to altitude, location and time; useful reports actually change pilot altitude',()=>{
   let time=10;
@@ -77,7 +79,7 @@ test('fresh live wind reports improve an actual marker landing in a paired appro
     let state={x:0,y:300,z:0,vy:0,heat:.5,grounded:false};
     for(;time<600;time+=.2){
       if(sendReports&&time+1e-6>=nextReport){
-        nextReport+=30;const w=actual(300);
+        nextReport+=180;const w=actual(300);
         knowledge.add({source:'observed-balloon',x:state.x,z:state.z,y:300,time,vx:w.vx,vz:w.vz,confidence:.9});
         pilot.suggestAltitude(300);
       }
@@ -95,4 +97,34 @@ test('fresh live wind reports improve an actual marker landing in a paired appro
   const without=fly(false),withReports=fly(true);
   assert.ok(withReports<100,`reported approach misses by ${withReports}m`);
   assert.ok(withReports<without-30,`report ${withReports}m versus no report ${without}m`);
+});
+
+
+test('all balloons share both the 180-second and 300-metre limits, including exact boundaries',()=>{
+  const observer=createRadioObserver(),car={x:0,z:0,speedMps:0};
+  const balloons=t=>['red','blue'].map(id=>({id,name:id,x:t+150,y:100,z:0}));
+  for(let t=0;t<=10;t++)observer.update(t,car,balloons(t));
+  assert.ok(observer.send('red',10));
+  assert.equal(observer.send('blue',10),null);
+  // Moving far enough does not remove the time requirement.
+  for(let t=11;t<190;t++)assert.ok(!observer.update(t,{...car,x:300},balloons(t))[1].ready);
+  assert.equal(observer.update(190,{...car,x:300},balloons(190))[1].ready,true);
+  // Passing enough time does not remove the distance requirement.
+  assert.equal(observer.update(190,{...car,x:299.99},balloons(190))[1].ready,false);
+  assert.equal(observer.update(191,{...car,x:300},balloons(191))[1].ready,true);
+  const report=observer.send('blue',191);
+  assert.equal(report.crewX,300);assert.equal(report.crewZ,0);
+  assert.equal(observer.send('red',191),null);
+  // Returning to the last sending point still requires moving away again.
+  for(let t=192;t<=371;t++)assert.equal(observer.update(t,{...car,x:300},balloons(150))[0].ready,false);
+});
+
+
+test('waiting three minutes still reports the most recent ten seconds of movement',()=>{
+ const observer=createRadioObserver(),car={x:0,z:0,speedMps:0};
+ for(let t=0;t<=10;t++)observer.update(t,car,[{id:'b',name:'b',x:0,y:100,z:0}]);
+ assert.ok(observer.send('b',10));
+ for(let t=11;t<=190;t++)observer.update(t,{...car,x:300},[{id:'b',name:'b',x:300+Math.max(0,t-180)*2,y:100,z:0}]);
+ const report=observer.send('b',190);
+ assert.ok(report);assert.equal(report.vx,2);assert.equal(report.x,310);
 });

@@ -2,7 +2,8 @@
 export const MARKER_DRAG = 9.81/10;
 export const MARKER_WIND_TAU = 1.5;
 export const OBSERVATION_SECONDS = 10;
-export const REPORT_INTERVAL = 30;
+export const REPORT_INTERVAL = 180;
+export const REPORT_DISTANCE = 300;
 export const TARGET_ZONE_RADIUS = 100;
 export const insideTargetZone = (p, target={x:0,z:0}) => Math.hypot(p.x-target.x,p.z-target.z)<=TARGET_ZONE_RADIUS;
 export function createWindKnowledge(baseWind, now=()=>0) {
@@ -27,24 +28,30 @@ export function createWindKnowledge(baseWind, now=()=>0) {
   };
 }
 export function createRadioObserver(){
-  const tracks=new Map(),lastSent=new Map();
-  let choices=[];
+  const tracks=new Map();
+  let choices=[],lastSent=null,lastCar=null;
   return {
     update(time,car,balloons){
+      lastCar={x:car.x,z:car.z};
+      const cooldown=lastSent?Math.max(0,REPORT_INTERVAL-(time-lastSent.time)):0;
+      const distanceRemaining=lastSent?Math.max(0,REPORT_DISTANCE-Math.hypot(car.x-lastSent.x,car.z-lastSent.z)):0;
       const ids=new Set(balloons.map(b=>b.id));
       for(const id of tracks.keys())if(!ids.has(id))tracks.delete(id);
       choices=balloons.filter(b=>Math.hypot(car.x-b.x,car.z-b.z)<=200).map(b=>{
         let track=tracks.get(b.id);
         // Reset on discontinuities (including fleet respawns), motion or altitude changes.
-        if(!track||Math.abs(car.speedMps)>.05||time-track.lastTime>1||Math.hypot(b.x-track.lastX,b.z-track.lastZ)>25||Math.abs(b.y-track.y)>30){
-          track={x:b.x,y:b.y,z:b.z,time,lastTime:time,lastX:b.x,lastZ:b.z};tracks.set(b.id,track);
+        if(!track||Math.abs(car.speedMps)>.05||time-track.lastTime>1||Math.hypot(car.x-track.carX,car.z-track.carZ)>5||Math.hypot(b.x-track.lastX,b.z-track.lastZ)>25||Math.abs(b.y-track.y)>30){
+          track={x:b.x,y:b.y,z:b.z,carX:car.x,carZ:car.z,samples:[],time,lastTime:time,lastX:b.x,lastZ:b.z};tracks.set(b.id,track);
         }
         track.lastTime=time;track.lastX=b.x;track.lastZ=b.z;
-        const duration=time-track.time,cooldown=Math.max(0,REPORT_INTERVAL-(time-(lastSent.get(b.id)??-Infinity)));
-        const ready=duration>=OBSERVATION_SECONDS&&cooldown===0&&Math.abs(car.speedMps)<=.05;
-        return {...b,seconds:Math.min(OBSERVATION_SECONDS,duration),cooldown,ready,
-          report:ready?{source:b.id,name:b.name,x:(b.x+track.x)/2,z:(b.z+track.z)/2,y:(b.y+track.y)/2,
-            vx:(b.x-track.x)/duration,vz:(b.z-track.z)/duration,time,confidence:.9}:null};
+        track.samples.push({time,x:b.x,y:b.y,z:b.z});
+        while(track.samples.length>2&&track.samples[1].time<=time-OBSERVATION_SECONDS)track.samples.shift();
+        const sample=track.samples[0],span=time-sample.time;
+        const duration=time-track.time;
+        const ready=duration>=OBSERVATION_SECONDS&&cooldown===0&&distanceRemaining===0&&Math.abs(car.speedMps)<=.05;
+        return {...b,seconds:Math.min(OBSERVATION_SECONDS,duration),cooldown,distanceRemaining,ready,
+          report:ready?{source:b.id,name:b.name,x:(b.x+sample.x)/2,z:(b.z+sample.z)/2,y:(b.y+sample.y)/2,
+            vx:(b.x-sample.x)/span,vz:(b.z-sample.z)/span,time,confidence:.9}:null};
       });
       const nearby=new Set(choices.map(b=>b.id));
       for(const id of tracks.keys())if(!nearby.has(id))tracks.delete(id);
@@ -52,7 +59,11 @@ export function createRadioObserver(){
     },
     choices:()=>choices,
     send(id,time){const choice=choices.find(b=>b.id===id);if(!choice?.ready)return null;
-      lastSent.set(id,time);tracks.delete(id);choices=choices.filter(b=>b.id!==id);return choice.report;},
+      lastSent={time,x:lastCar.x,z:lastCar.z};
+      tracks.clear();
+      // Applies across all balloons, so switching targets cannot bypass the limits.
+      choices=choices.map(b=>({...b,ready:false,report:null,seconds:0,cooldown:REPORT_INTERVAL,distanceRemaining:REPORT_DISTANCE}));
+      return {...choice.report,crewX:lastCar.x,crewZ:lastCar.z};},
   };
 }
 // Judge with a later, independent movement interval, not the sample used to fit the model.
