@@ -1,6 +1,7 @@
 // Contextual actions never open the settings menu. Confirmation rules stay in chaseRules.
-export function radioCard({finished,confirmation,stationary,balloon,groundReady,crew=null,windUnlocked=true}) {
+export function radioCard({finished,confirmation,stationary,balloon,groundReady,crew=null,windUnlocked=true,pendingWind=null}) {
   if(finished)return null;
+  if(pendingWind)return {kind:'wind',label:'上空風を報告 ＋20点',enabled:true};
   if(stationary&&crew)return crew;
   if(confirmation.drop)return {kind:'drop',label:'投下確認 ＋50点',enabled:true};
   if(confirmation.landing)return {kind:'landing',label:'区域内着地確認 1,000点',enabled:true};

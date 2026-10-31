@@ -128,3 +128,32 @@ test('waiting three minutes still reports the most recent ten seconds of movemen
  const report=observer.send('b',190);
  assert.ok(report);assert.equal(report.vx,2);assert.equal(report.x,310);
 });
+
+
+test('a completed observation is held without rejudging traffic and transmits the captured data',()=>{
+ let wall=0;
+ const observer=createRadioObserver({now:()=>wall}),car={x:0,z:0,speedMps:0};
+ for(let t=0;t<=10;t++)observer.update(t,car,[{id:'red',name:'赤',x:t,y:100+t,z:0}]);
+ const pending=observer.capture('red');
+ assert.ok(pending);assert.equal(pending.report.vx,1);
+ wall=14000;
+ observer.update(200,{x:900,z:0,speedMps:1},[]);
+ assert.equal(observer.pending(),pending);
+ assert.equal(observer.choices()[0].name,'赤');assert.equal(observer.choices()[0].y,105);
+ assert.equal(observer.send('red',200),null); // A parked car is still required to transmit.
+ observer.update(201,{x:900,z:0,speedMps:0},[{id:'red',name:'別名',x:2000,y:900,z:0}]);
+ const report=observer.send('red',201);
+ assert.equal(report.name,'赤');assert.equal(report.y,105);assert.equal(report.vx,1);
+ assert.equal(report.crewX,0);assert.equal(report.time,201);
+ assert.equal(observer.pending(),null);assert.equal(observer.send('red',201),null);
+});
+test('the held button expires after fifteen real seconds, even without advancing the simulation',()=>{
+ let wall=0;
+ const observer=createRadioObserver({now:()=>wall}),car={x:0,z:0,speedMps:0};
+ for(let t=0;t<=10;t++)observer.update(t,car,[{id:'red',name:'赤',x:t,y:100,z:0}]);
+ observer.capture('red');wall=14999;assert.ok(observer.pending());
+ wall=15000;assert.equal(observer.pending(),null);assert.equal(observer.send('red',10),null);
+ assert.equal(observer.update(10,car,[{id:'red',name:'赤',x:10,y:100,z:0}])[0].ready,false);
+ for(let t=11;t<=20;t++)observer.update(t,car,[{id:'red',name:'赤',x:t,y:100,z:0}]);
+ assert.ok(observer.capture('red')); // Expiry without sending did not start the 3-minute cooldown.
+});

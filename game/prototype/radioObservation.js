@@ -4,6 +4,7 @@ export const MARKER_WIND_TAU = 1.5;
 export const OBSERVATION_SECONDS = 10;
 export const REPORT_INTERVAL = 180;
 export const REPORT_DISTANCE = 300;
+export const REPORT_HOLD_MS = 15000;
 export const TARGET_ZONE_RADIUS = 100;
 export const insideTargetZone = (p, target={x:0,z:0}) => Math.hypot(p.x-target.x,p.z-target.z)<=TARGET_ZONE_RADIUS;
 export function createWindKnowledge(baseWind, now=()=>0) {
@@ -27,12 +28,27 @@ export function createWindKnowledge(baseWind, now=()=>0) {
     add(r){reports=reports.filter(v=>now()-v.time<180&&v.source!==r.source);reports.push({...r});},
   };
 }
-export function createRadioObserver(){
+export function createRadioObserver({now=()=>performance.now()}={}){
   const tracks=new Map();
-  let choices=[],lastSent=null,lastCar=null;
+  let choices=[],lastSent=null,lastCar=null,pending=null;
+  function expire(){
+    if(pending&&now()>=pending.until){pending=null;tracks.clear();choices=[];}
+  }
+  function capture(id){
+    expire();
+    if(pending)return pending.choice.id===id?pending.choice:null;
+    const choice=choices.find(b=>b.id===id);
+    if(!choice?.ready)return null;
+    const report=Object.freeze({...choice.report,crewX:lastCar.x,crewZ:lastCar.z});
+    const frozen=Object.freeze({...choice,x:report.x,y:report.y,z:report.z,report});
+    pending={choice:frozen,until:now()+REPORT_HOLD_MS};choices=[frozen];
+    return frozen;
+  }
   return {
     update(time,car,balloons){
-      lastCar={x:car.x,z:car.z};
+      lastCar={x:car.x,z:car.z,speedMps:car.speedMps};
+      expire();
+      if(pending)return [pending.choice];
       const cooldown=lastSent?Math.max(0,REPORT_INTERVAL-(time-lastSent.time)):0;
       const distanceRemaining=lastSent?Math.max(0,REPORT_DISTANCE-Math.hypot(car.x-lastSent.x,car.z-lastSent.z)):0;
       const ids=new Set(balloons.map(b=>b.id));
@@ -57,13 +73,21 @@ export function createRadioObserver(){
       for(const id of tracks.keys())if(!nearby.has(id))tracks.delete(id);
       return choices;
     },
-    choices:()=>choices,
-    send(id,time){const choice=choices.find(b=>b.id===id);if(!choice?.ready)return null;
-      lastSent={time,x:lastCar.x,z:lastCar.z};
-      tracks.clear();
+    choices:()=>{expire();return choices;},
+    capture,
+    pending:()=>{expire();return pending?.choice||null;},
+    send(id,time){
+      expire();
+      if(!lastCar||Math.abs(lastCar.speedMps)>.05)return null;
+      const choice=capture(id);if(!choice)return null;
+      const report=choice.report;
+      lastSent={time,x:report.crewX,z:report.crewZ};
+      pending=null;tracks.clear();
       // Applies across all balloons, so switching targets cannot bypass the limits.
       choices=choices.map(b=>({...b,ready:false,report:null,seconds:0,cooldown:REPORT_INTERVAL,distanceRemaining:REPORT_DISTANCE}));
-      return {...choice.report,crewX:lastCar.x,crewZ:lastCar.z};},
+      // The pilot receives the measured vector as a new message, not an observation timestamp.
+      return {...report,time};
+    },
   };
 }
 // Judge with a later, independent movement interval, not the sample used to fit the model.

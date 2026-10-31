@@ -26,3 +26,13 @@ test('crew request has one-card priority only when stopped, and wind is locked b
  assert.equal(radioCard({...state,crew,stationary:false}),null);
  assert.equal(radioCard({...state,windUnlocked:true}).kind,'wind');
 });
+
+
+test('a held measurement keeps its button despite moving or new competing messages',()=>{
+ const state={finished:false,stationary:false,confirmation:{drop:true},groundReady:true,
+   crew:{kind:'overhead',label:'上空クリアです。'},pendingWind:{id:'red'}};
+ assert.equal(radioCard(state).kind,'wind');
+ assert.equal(radioCard({...state,stationary:true}).kind,'wind');
+ assert.equal(radioCard({...state,finished:true}),null);
+ assert.equal(radioCard({...state,pendingWind:null,stationary:true}).kind,'overhead');
+});

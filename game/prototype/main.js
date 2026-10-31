@@ -1488,6 +1488,8 @@ function confirmZoneLanding(){
 }
 function updateRadioUi(){
   const $=id=>document.getElementById(id), choices=radioObserver.choices(),select=$('radio-balloon');
+  let pending=radioObserver.pending();
+  select.disabled=!!pending;
   const ids=choices.map(b=>b.id).join(',');
   if(select.dataset.ids!==ids){
     const previous=select.value;select.replaceChildren();
@@ -1505,28 +1507,39 @@ function updateRadioUi(){
       b.distanceRemaining>0?`前回の報告地点からあと${Math.ceil(b.distanceRemaining)}m移動`:''
     ].filter(Boolean).join('・')}`:
     b.ready?`${b.name}${altitude} · 新しい上空風を報告できます（＋20点）`:`${b.name}${altitude} · 観測 ${Math.floor(b.seconds)}/10秒`;
-  $('radio-wind-send').disabled=!chaseRace.reported||!b?.ready||chaseRace.finished;
+  $('radio-wind-send').disabled=!chaseRace.reported||!b?.ready||!stationary||chaseRace.finished;
   if(!chaseRace.reported)$('radio-observation-hint').textContent='ターゲット付近で地上風を報告すると、他機の上空風を観測できます。';
+  if(pending)$('radio-observation-hint').textContent=`${pending.name} · 約${Math.round(pending.y*M2FT/50)*50}ft MSL · 観測完了`;
   const c=radioConfirmations();$('radio-drop').disabled=!c.drop;$('radio-landing').disabled=!c.landing;
   $('radio-confirm-hint').textContent=chaseRace.finished?'ミッション完了':chaseRace.landingInZone?
     '計測班が回収します。区域外100〜400mで停車して着地確認を送ってください。':
     marker.state?.landed?'区域外に着地しました。車で回収してください。':marker.state?
     '投下を見届けたら、投下地点から1,500m以内で停車して投下確認を送れます。':'投下確認＋50点 / 区域内着地確認は回収成功と同じ1,000点。';
-  const card=radioCard({finished:chaseRace.finished,confirmation:c,stationary,balloon:b,groundReady:reportStatus()==='ready',windUnlocked:chaseRace.reported,crew:raceAutopilot.crewCard?.(stationary)});
+  const options={finished:chaseRace.finished,confirmation:c,stationary,balloon:b,groundReady:reportStatus()==='ready',windUnlocked:chaseRace.reported,crew:raceAutopilot.crewCard?.(stationary)};
+  let card=radioCard({...options,pendingWind:pending});
+  if(card?.kind==='wind'&&!pending){
+    pending=radioObserver.capture(b.id);
+    if(pending){
+      card=radioCard({...options,pendingWind:pending});select.disabled=true;
+      $('radio-observation-hint').textContent=`${pending.name} · 約${Math.round(pending.y*M2FT/50)*50}ft MSL · 観測完了`;
+    }else card=null;
+  }
   $('radio-card').hidden=!card;
   $('chase-report-quick').hidden=!card?.enabled;
+  $('chase-report-quick').disabled=!!pending&&!stationary;
   if(card){
     $('chase-report-quick').textContent=card.label;
     const context=card.context??(card.kind==='wind'||card.kind==='observing'?$('radio-observation-hint').textContent:
       card.kind==='ground'?'停車中 · この地点の地上風を報告できます':card.kind==='drop'?'マーカーの投下を見届けたら送信':'計測班が回収します。区域内への着地を確認して送信');
     if($('radio-context').textContent!==context)$('radio-context').textContent=context;
   }
-  $('radio-target-controls').hidden=!card||!['wind','observing'].includes(card.kind)||choices.length<2;
+  $('radio-target-controls').hidden=!!pending||!card||!['wind','observing'].includes(card.kind)||choices.length<2;
   $('radio-target-count').textContent=`${Math.max(0,choices.findIndex(v=>v.id===select.value))+1} / ${choices.length}`;
 
 }
 function sendRadioQuick(){
   if(chaseRace.finished)return;
+  if(radioObserver.pending()){if(Math.abs(raceCar.info().speedMps)<=.05)sendUpperWind();return;}
   const reply=raceAutopilot.replyCrew?.(Math.abs(raceCar.info().speedMps)<=.05);
   if(reply){chaseRace.crewPoints+=reply.points;chaseRadio(`${reply.message}${reply.points?` ＋${reply.points}点`:''}`);updateChaseMission();return;}
   const c=radioConfirmations();
@@ -1538,7 +1551,7 @@ function sendRadioQuick(){
 }
 function sendUpperWind(){
   if(chaseRace.finished||!creativeWorld||!chaseRace.reported||Math.abs(raceCar.info().speedMps)>.05)return;
-  const report=radioObserver.send(document.getElementById('radio-balloon').value,flightSeconds);
+  const report=radioObserver.send(radioObserver.pending()?.id||document.getElementById('radio-balloon').value,flightSeconds);
   if(!report)return;
   const before=windKnowledge.snapshot();windKnowledge.add(report);const after=windKnowledge.snapshot();
   raceAutopilot.suggestAltitude(report.y);chaseRace.windPoints+=20;
