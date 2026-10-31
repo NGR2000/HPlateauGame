@@ -20,6 +20,7 @@ import { holdButton, bindCarControls } from './touchControls.js';
 import { addTeamLabel, updateTeamLabel, separateTeamLabels } from './teamLabels.js';
 import { createStoppedCamera } from './stoppedCamera.js';
 import { createChaseOverview } from './chaseOverview.js';
+import { createTopView } from './topView.js';
 import { loadTeamBalloonModel, createTeamBalloon, markTeamBalloon, createCreativeFleet } from './creativeBalloons.js';
 import { loadCity, creativeLaunch, CATALOG } from './cityLayout.js';
 import { loadCityModels, createCityView, buildingBlocks } from './cityView.js';
@@ -570,7 +571,8 @@ addEventListener('keydown', (e) => {
   if (!chaseMode) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
   if (e.code === 'KeyV' && !e.repeat) toggleRaceView();
-  if ((e.code === 'KeyO' || e.code === 'KeyB') && !e.repeat) { e.preventDefault(); toggleRaceOverview(); }
+  if (e.code === 'KeyO' && !e.repeat) { e.preventDefault(); toggleRaceOverview(); }
+  if (e.code === 'KeyB' && !e.repeat) { e.preventDefault(); toggleRaceTop(); }
 });
 
 // ---- タッチ操作ボタン(スマホ・タブレットなどタッチ端末向け) ----
@@ -603,6 +605,7 @@ function setupTouchControls() {
     if (chaseMode) toggleRaceView(); else toggleFpv();
   });
   document.getElementById('tc-overview').addEventListener('click', toggleRaceOverview);
+  document.getElementById('tc-top').addEventListener('click', toggleRaceTop);
   document.getElementById('tc-tscale').addEventListener('click', cycleTimeScale);
   document.getElementById('tc-pibal').addEventListener('click', togglePibal);
   document.getElementById('overview-button').addEventListener('click', toggleRaceOverview);
@@ -935,14 +938,15 @@ let raceStoppedCamera = null;
 let raceOverviewCamera = null;
 const RACE_CHASE_BACK_M = 14;
 const RACE_CHASE_UP_M = 6;
-// 気球と車の両方を見下ろす俯瞰(O キー、旧Bも有効)。Vとは別枠のオン・オフで、
+// 気球と車の両方を見下ろす俯瞰(O キー)。Vとは別枠のオン・オフで、
 // **気球が高く上がって画面から見失う**問題への対策(2026-09-06)。
 // 距離は2体の間隔に応じて自動で伸ばすので、離れるほどカメラも引く
-let raceOverview = false;
+let raceOverview = false, raceTop = false, topPreviousOverview = false;
+const raceTopCamera = createTopView({element:renderer.domElement,isActive:()=>raceTop});
 const chaseRace = { dropConfirmed:false,landingConfirmed:false,windPoints:0,crewPoints:0,landingInZone:false,dropPosition:null, finished: false, reported: false, caught: false, afterLanding: false, landingDistance: null };
 const chaseRadioLog = [];
 let chaseToastTimer = null;
-const CHASE_BEST_KEY = creativeWorld?'chase-radio-score-best-v2':'chase-radio-real-score-best-v2'; // 通常モードの自己ベスト(BEST_KEY)とは別に持つ
+const CHASE_BEST_KEY = creativeWorld?'chase-radio-score-best-v3':'chase-radio-real-score-best-v2'; // 通常モードの自己ベスト(BEST_KEY)とは別に持つ
 if (chaseMode) {
   raceAutopilot = createBalloonAutopilot({ windAt, targetX: TARGET_XZ.x, targetZ: TARGET_XZ.z });
 }
@@ -1032,7 +1036,7 @@ function spawnRaceCar(x, z) {
     addTeamLabel(raceCar.group, { text: '車', color: '#ffd166', name: 'team-car-label', width: 28 });
   }
   raceStoppedCamera = createStoppedCamera({ camera, element: renderer.domElement,
-    canMove: () => started && !raceOverview && Math.abs(raceCar.info().speedMps) <= 0.05,
+    canMove: () => started && !raceOverview && !raceTop && Math.abs(raceCar.info().speedMps) <= 0.05,
     render: () => renderer.render(scene, camera) });
   raceOverviewCamera = createChaseOverview({ camera, element: renderer.domElement,
     getHeight: terrain.getHeight, isActive: () => raceOverview });
@@ -1069,25 +1073,37 @@ function placeRaceFollowCamera() {
 function toggleRaceView() {
   if (!started || !raceCar) return;
   raceOverview = false;
+  raceTop = false;
   raceStoppedCamera?.reset();
   raceOverviewCamera?.reset();
   raceViewMode = raceViewMode === 'forward' ? 'balloon' : 'forward';
   updateRaceControlsEnabled();
   placeRaceFollowCamera();
 }
-// O(旧Bも可)で俯瞰を切り替え、戻るときは以前の見る方向を保つ。
+// Oで俯瞰を切り替え、Bは独立した真上視点。
 function toggleRaceOverview() {
   if (!started || !raceCar) return;
-  raceOverview = !raceOverview;
+  raceOverview = raceTop ? true : !raceOverview;
+  raceTop = false;
   raceStoppedCamera?.reset();
   raceOverviewCamera?.reset();
   updateRaceControlsEnabled();
   if (!raceOverview) placeRaceFollowCamera();
   else raceOverviewCamera?.update(state.pos, raceCar.info());
 }
+function toggleRaceTop() {
+  if (!started || !raceCar) return;
+  if (raceTop) { raceTop=false; raceOverview=topPreviousOverview; }
+  else { topPreviousOverview=raceOverview; raceOverview=false; raceTop=true; raceTopCamera.reset(); }
+  raceStoppedCamera?.reset();
+  updateRaceControlsEnabled();
+  if (!raceTop && !raceOverview) placeRaceFollowCamera();
+}
 // 画面のボタンと、俯瞰だけに出す名札を同期する。
 function updateRaceControlsEnabled() {
   controls.enabled = false; // 停車中の見回しは位置固定の専用カメラで行う。
+  document.getElementById('tc-top').setAttribute('aria-pressed',String(raceTop));
+  document.getElementById('tc-top').textContent=raceTop?'真上から戻る':'真上';
   const touchOverview = document.getElementById('tc-overview');
   touchOverview.setAttribute('aria-pressed', String(raceOverview));
   touchOverview.textContent = raceOverview ? '運転へ' : '俯瞰';
@@ -1108,12 +1124,12 @@ function updateCreativeTeamLabels() {
   const carLabel = scene.getObjectByName('team-car-label');
   for (const label of [balloonLabel, carLabel]) {
     if (!label) continue;
-    label.visible = raceOverview;
+    label.visible = raceOverview || raceTop;
     const leader = label.parent.getObjectByName(`${label.name}-leader`);
     if (leader) leader.visible = false;
-    if (raceOverview) updateTeamLabel(label, camera, innerHeight);
+    if (raceOverview || raceTop) updateTeamLabel(label, raceTop ? raceTopCamera.camera : camera, innerHeight);
   }
-  if (raceOverview) separateTeamLabels(balloonLabel, carLabel, camera, innerWidth, innerHeight);
+  if (raceOverview || raceTop) separateTeamLabels(balloonLabel, carLabel, raceTop ? raceTopCamera.camera : camera, innerWidth, innerHeight);
 }
 
 // 距離の表し方(1km未満はm)。状態表示と無線報告で同じ言い方にする
@@ -1501,12 +1517,12 @@ function updateRadioUi(){
   const b=choices.find(b=>b.id===select.value),car=raceCar?.info();
   const stationary=car&&Math.abs(car.speedMps)<=.05;
   const altitude=b?` · 約${Math.round(b.y*M2FT/50)*50}ft MSL`:'';
-  $('radio-observation-hint').textContent=!stationary?'停車して観測してください':!b?'他の気球の直下から水平200m以内へ移動してください':
-    b.cooldown>0||b.distanceRemaining>0?`${b.name}${altitude} · ${[
-      b.cooldown>0?`再報告まで${Math.ceil(b.cooldown)}秒`:'',
-      b.distanceRemaining>0?`前回の報告地点からあと${Math.ceil(b.distanceRemaining)}m移動`:''
-    ].filter(Boolean).join('・')}`:
-    b.ready?`${b.name}${altitude} · 新しい上空風を報告できます（＋20点）`:`${b.name}${altitude} · 観測 ${Math.floor(b.seconds)}/10秒`;
+  const targetObservation=car&&Math.hypot(car.x-TARGET_XZ.x,car.z-TARGET_XZ.z)<=400;
+  const observationName=targetObservation?'ターゲット付近':'真下';
+  $('radio-observation-hint').textContent=!stationary?'停車して観測してください':!b?
+    `この範囲で未報告の他機から水平${targetObservation?300:200}m以内へ移動してください`:
+    b.ready?`${b.name}${altitude} · ${observationName}の上空風を報告できます（＋20点）`:
+    `${b.name}${altitude} · ${observationName}の観測 ${Math.floor(b.seconds)}/${b.requiredSeconds}ゲーム秒`;
   $('radio-wind-send').disabled=!chaseRace.reported||!b?.ready||!stationary||chaseRace.finished;
   if(!chaseRace.reported)$('radio-observation-hint').textContent='ターゲット付近で地上風を報告すると、他機の上空風を観測できます。';
   if(pending)$('radio-observation-hint').textContent=`${pending.name} · 約${Math.round(pending.y*M2FT/50)*50}ft MSL · 観測完了`;
@@ -1565,7 +1581,7 @@ function updateObservations(){
   if(!creativeWorld||!raceCar||flightSeconds-lastObservationUpdate<.25)return;
   lastObservationUpdate=flightSeconds;
   const balloons=creativeFleet.observations();
-  radioObserver.update(flightSeconds,raceCar.info(),chaseRace.reported?balloons:[]);
+  radioObserver.update(flightSeconds,raceCar.info(),chaseRace.reported?balloons:[],TARGET_XZ);
   for(let i=pendingReports.length-1;i>=0;i--){
     const pending=pendingReports[i],b=balloons.find(b=>b.id===pending.report.source),elapsed=flightSeconds-pending.time;
     if(!b||elapsed>90||Math.hypot(b.x-pending.start.x,b.z-pending.start.z)>elapsed*20+10){pendingReports.splice(i,1);continue;}
@@ -2009,6 +2025,7 @@ function applyRaceHudMode() {
   document.getElementById('tc-marker').hidden = true;
   document.getElementById('tc-driving').hidden = false;
   document.getElementById('tc-overview').hidden = false;
+  document.getElementById('tc-top').hidden = false;
   document.getElementById('tc-view').textContent = '視点';
   {
     // The same compact menu is available on desktop and touch devices.
@@ -2022,7 +2039,7 @@ function applyRaceHudMode() {
       content.append(document.getElementById(id));
     }
     // 視点を選んだらすぐ景色へ戻す。一時停止中は再開ボタンを見せておく。
-    for (const id of ['tc-view', 'tc-overview']) {
+    for (const id of ['tc-view', 'tc-overview', 'tc-top']) {
       document.getElementById(id).addEventListener('click', () => { menu.open = false; });
     }
   }
@@ -2113,8 +2130,10 @@ renderer.setAnimationLoop(() => {
     if (chaseMode && raceCar) {
       // ?mode=chase: 気球ではなく、プレイヤーが操縦する車にカメラを合わせる
       const c = raceCar.info();
-      if (raceOverview || Math.abs(c.speedMps) > 0.05) raceStoppedCamera?.reset();
-      if (raceOverview) {
+      if (raceOverview || raceTop || Math.abs(c.speedMps) > 0.05) raceStoppedCamera?.reset();
+      if (raceTop) {
+        raceTopCamera.update(c, innerWidth / innerHeight, Math.max(state.pos.y,...(creativeFleet?.observations()||[]).map(b=>b.y)));
+      } else if (raceOverview) {
         raceOverviewCamera.update(state.pos, c);
       } else if (!raceStoppedCamera?.active) {
         placeRaceFollowCamera();
@@ -2187,5 +2206,8 @@ renderer.setAnimationLoop(() => {
 
   if (!chaseMode && !fpv && !carView) controls.update();
   updateCreativeTeamLabels();
-  renderer.render(scene, camera);
+  const fog=scene.fog;
+  if(raceTop)scene.fog=null;
+  renderer.render(scene, raceTop ? raceTopCamera.camera : camera);
+  scene.fog=fog;
 });

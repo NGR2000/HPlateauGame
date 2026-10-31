@@ -8,10 +8,6 @@ test('contextual radio hides unavailable actions and prioritizes confirmations w
  assert.equal(radioCard({...state,balloon:{ready:true}}),null);
  assert.equal(radioCard({...state,stationary:true,balloon:{ready:false}}).enabled,false);
  assert.equal(radioCard({...state,stationary:true,balloon:{ready:true}}).kind,'wind');
- assert.equal(radioCard({...state,stationary:true,balloon:{ready:false,cooldown:180,distanceRemaining:300}}),null);
- assert.equal(radioCard({...state,stationary:true,balloon:{ready:false,cooldown:1,distanceRemaining:0}}),null);
- assert.equal(radioCard({...state,stationary:true,balloon:{ready:false,cooldown:0,distanceRemaining:1}}),null);
- assert.equal(radioCard({...state,stationary:true,balloon:{ready:false,cooldown:0,distanceRemaining:0}}).kind,'observing');
  assert.equal(radioCard({...state,groundReady:true}).kind,'ground');
  assert.equal(radioCard({...state,stationary:true,balloon:{ready:false},groundReady:true}).kind,'ground');
  assert.equal(radioCard({...state,confirmation:{drop:true,landing:true},groundReady:true}).kind,'drop');

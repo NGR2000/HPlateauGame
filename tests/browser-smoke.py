@@ -28,10 +28,29 @@ with sync_playwright() as p:
  assert not errors,errors
  assert 'time=16%3A00' in page.url
  assert page.locator('#area-search').count()==0
+ def check_views(page):
+  page.keyboard.press('b')
+  assert page.locator('#tc-top').get_attribute('aria-pressed')=='true'
+  assert page.locator('#tc-overview').get_attribute('aria-pressed')=='false'
+  page.keyboard.down('w');page.wait_for_timeout(1000);page.keyboard.up('w')
+  assert float(page.locator('#race-car-speed').text_content().split()[0])>0
+  page.mouse.move(600,400);page.mouse.wheel(0,-200)
+  page.wait_for_timeout(300)
+  page.screenshot(path='/tmp/hplateau-top-view.png')
+  page.keyboard.press('b')
+  assert page.locator('#tc-top').get_attribute('aria-pressed')=='false'
+  page.keyboard.press('o');page.keyboard.press('b');page.keyboard.press('b')
+  assert page.locator('#tc-overview').get_attribute('aria-pressed')=='true'
+  page.keyboard.press('b');page.keyboard.press('o')
+  assert page.locator('#tc-overview').get_attribute('aria-pressed')=='true'
+  assert page.locator('#tc-top').get_attribute('aria-pressed')=='false'
+  page.keyboard.press('b');page.keyboard.press('v')
+  assert page.locator('#tc-top').get_attribute('aria-pressed')=='false'
+  assert page.locator('#tc-overview').get_attribute('aria-pressed')=='false'
  page.goto('http://127.0.0.1:8001/game/prototype/play.html?world=creative&mode=chase')
  page.locator('#loading').wait_for(state='detached',timeout=60000)
  page.wait_for_timeout(3000)
- page.keyboard.down('w');page.wait_for_timeout(1000);page.keyboard.up('w')
+ check_views(page)
  print('CREATIVE speed',page.locator('#race-car-speed').text_content(),'errors',errors)
  assert 'km/h' in page.locator('#race-car-speed').text_content()
  assert not errors,errors
@@ -40,4 +59,26 @@ with sync_playwright() as p:
  print('EDITOR errors',errors)
  assert not errors,errors
  assert page.request.get('http://127.0.0.1:8001/game/development/play.html').status == 404
+ mobile=b.new_page(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
+ mobile.on('pageerror',lambda e:errors.append(str(e)))
+ mobile.route('https://cyberjapandata.gsi.go.jp/**',lambda route:route.fulfill(status=200,content_type='image/png',body=tile,headers={'Access-Control-Allow-Origin':'*'}))
+ mobile.goto('http://127.0.0.1:8001/game/prototype/play.html?world=creative&mode=chase')
+ mobile.locator('#loading').wait_for(state='detached',timeout=60000)
+ mobile.locator('#mobile-menu > summary').tap();mobile.locator('#tc-top').tap()
+ assert not mobile.locator('#mobile-menu').evaluate('(el)=>el.open')
+ assert mobile.locator('#tc-top').get_attribute('aria-pressed')=='true'
+ cdp=mobile.context.new_cdp_session(mobile)
+ forward=mobile.locator('#tc-car-forward').bounding_box()
+ right=mobile.locator('#tc-car-right').bounding_box()
+ points=[{'x':r['x']+r['width']/2,'y':r['y']+r['height']/2,'id':i} for i,r in enumerate([forward,right])]
+ cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':points})
+ mobile.wait_for_timeout(1000)
+ cdp.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+ assert float(mobile.locator('#race-car-speed').text_content().split()[0])>0
+ mobile.locator('#mobile-menu > summary').tap();mobile.locator('#tc-top').tap()
+ assert mobile.locator('#tc-top').get_attribute('aria-pressed')=='false'
+ mobile.locator('#mobile-menu > summary').tap();mobile.locator('#tc-overview').tap()
+ assert mobile.locator('#tc-overview').get_attribute('aria-pressed')=='true'
+ assert not errors,errors
+ print('MOBILE top view, menu and touch driving passed')
  b.close()

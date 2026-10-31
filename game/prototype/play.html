@@ -211,7 +211,7 @@
     .mobile-driving-hint { margin: 0 0 10px; font-size: 12px; color: #bed1dd; }
     .chase-mode #creative-flight-info { margin: 0 0 4px; }
     .chase-mode #overview-button { display: none; }
-    .chase-mode #tc-overview[aria-pressed="true"] { background: #2e6da4; }
+    .chase-mode #tc-top[aria-pressed="true"], .chase-mode #tc-overview[aria-pressed="true"] { background: #2e6da4; }
     .chase-mode .tc-btn.tc-drive { background: rgba(16, 26, 36, 0.58); }
     .chase-mode .tc-btn.tc-drive.active { background: rgba(46, 109, 164, 0.86); }
   }
@@ -520,9 +520,9 @@
   <details id="help-keys-race" class="kbd-only" style="display:none">
     <summary>操作説明(マーカー回収レース)</summary>
     <b>W/S</b>/<b>↑↓</b> 加減速 <b>A/D</b>/<b>←→</b> ハンドル<br>
-    <b>V</b> 進行方向 / 気球を見る <b>O</b> <span id="race-overview-help">気球と車を一緒に見下ろす俯瞰</span>(Bも可)<br>
+    <b>V</b> 進行方向 / 気球を見る <b>O</b> <span id="race-overview-help">気球と車を一緒に見下ろす俯瞰</span> <b>B</b> 車を中心に真上から見る（運転可能）<br>
     <b>1-4</b> 時間加速 ×1/×2/×4/×8 <b>P</b> パイバル表 表示/非表示<br>
-    停車中: ドラッグで見回す。俯瞰・停車中: ホイール／ピンチで拡大縮小。俯瞰を開き直すと自分のチームに戻ります。
+    停車中: ドラッグで見回す。俯瞰・真上・停車中: ホイール／ピンチで拡大縮小。俯瞰を開き直すと自分のチームに戻ります。
   </details>
   <a id="setup-link" href="./play.html">フライト準備</a>
   <span class="mode-separator">/</span> <a id="howto-link" href="#">使い方</a>
@@ -550,7 +550,7 @@
     <div id="radio-creative" hidden>
       <p>橙色の境界から内側100mは計測班の作業区域です。車は入れません。区域内のマーカーは計測班が回収します。</p>
       <p>大きく上昇する前にパイロットから上空確認を依頼します。停車してカードを押すと状況を報告でき、1つの依頼につき50点。他機がいるときは上昇を待ちます。</p>
-      <p>ターゲット付近で地上風を報告した後、他の気球の直下から水平200m以内で停車し、10秒観測して報告すると20点。次の報告には、前回から3ゲーム分以上の経過と、車が前回の報告地点から300m以上移動することの両方が必要です。気球を切り替えても共通の条件です。移動先で停車して再観測してください。後の動きとの照合で有益と確認できた情報には追加50〜100点。高度は海抜ftです。</p>
+      <p>地上風の報告後、ターゲットから400mより遠い場所では他機から水平200m以内・停車・10ゲーム秒、400m以内では水平300m以内・停車・20ゲーム秒で上空風を報告できます。各気球につき各範囲で1回ずつ、順番は自由です。各報告20点、有益な情報には後の照合で追加50〜100点。高度は海抜ftです。</p>
       <label for="radio-balloon">観測する気球</label>
       <select id="radio-balloon"><option value="">近くに観測できる気球がありません</option></select>
       <p id="radio-observation-hint" role="status"></p>
@@ -584,7 +584,7 @@
 <details id="mobile-menu" hidden>
   <summary aria-label="運転メニュー">☰ メニュー</summary>
   <div id="mobile-menu-content">
-    <p class="mobile-driving-hint">前進＋左右を同時に長押しで運転。ブレーキは長押しで後退します。気球へ／前方へで見る方向を切り替え。停車中はドラッグで見回せます。俯瞰中もピンチで拡大縮小し、周りの気球を眺められます。</p>
+    <p class="mobile-driving-hint">前進＋左右を同時に長押しで運転。ブレーキは長押しで後退します。気球へ／前方へで見る方向を切り替え。真上でも運転できます。停車中はドラッグで見回せます。俯瞰・真上もピンチで拡大縮小し、周りの気球を眺められます。</p>
   </div>
 </details>
 <div id="touch-controls">
@@ -594,6 +594,7 @@
     <button id="tc-view" class="tc-btn tc-small" type="button" aria-label="視点切替">👁</button>
     <button id="tc-marker" class="tc-btn tc-small" type="button" aria-label="マーカー投下">📍</button>
     <button id="tc-overview" class="tc-btn tc-small" type="button" aria-label="気球と車の俯瞰切替" aria-pressed="false" hidden>俯瞰</button>
+    <button id="tc-top" class="tc-btn tc-small" type="button" aria-label="真上視点切替" aria-pressed="false" hidden>真上</button>
   </div>
   <div id="tc-flight" class="tc-row tc-main">
     <button id="tc-rip" class="tc-btn tc-big" type="button" aria-label="リップライン(長押し)">RIP</button>

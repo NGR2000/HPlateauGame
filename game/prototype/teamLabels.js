@@ -56,7 +56,8 @@ export function addTeamLabel(group, { text, color, name, width }) {
 export function updateTeamLabel(label, camera, viewportHeight) {
   if (!label) return;
   // 距離・画面の縦横・端末の解像度によらず、同じ小ささを保つ。
-  const unit = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
+  const unit = (camera.isOrthographicCamera ? camera.top-camera.bottom
+    : 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
     / camera.zoom / Math.max(1, viewportHeight);
   label.scale.set(label.userData.pixelWidth * unit, label.userData.pixelHeight * unit, 1);
 }

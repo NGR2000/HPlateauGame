@@ -2,8 +2,8 @@
 export const MARKER_DRAG = 9.81/10;
 export const MARKER_WIND_TAU = 1.5;
 export const OBSERVATION_SECONDS = 10;
-export const REPORT_INTERVAL = 180;
-export const REPORT_DISTANCE = 300;
+export const TARGET_OBSERVATION_SECONDS = 20;
+export const TARGET_OBSERVATION_RADIUS = 400;
 export const REPORT_HOLD_MS = 15000;
 export const TARGET_ZONE_RADIUS = 100;
 export const insideTargetZone = (p, target={x:0,z:0}) => Math.hypot(p.x-target.x,p.z-target.z)<=TARGET_ZONE_RADIUS;
@@ -29,8 +29,8 @@ export function createWindKnowledge(baseWind, now=()=>0) {
   };
 }
 export function createRadioObserver({now=()=>performance.now()}={}){
-  const tracks=new Map();
-  let choices=[],lastSent=null,lastCar=null,pending=null;
+  const tracks=new Map(), sent={near:new Set(),target:new Set()};
+  let choices=[],lastCar=null,pending=null, mode=null;
   function expire(){
     if(pending&&now()>=pending.until){pending=null;tracks.clear();choices=[];}
   }
@@ -45,15 +45,17 @@ export function createRadioObserver({now=()=>performance.now()}={}){
     return frozen;
   }
   return {
-    update(time,car,balloons){
+    update(time,car,balloons,target={x:0,z:0}){
       lastCar={x:car.x,z:car.z,speedMps:car.speedMps};
       expire();
       if(pending)return [pending.choice];
-      const cooldown=lastSent?Math.max(0,REPORT_INTERVAL-(time-lastSent.time)):0;
-      const distanceRemaining=lastSent?Math.max(0,REPORT_DISTANCE-Math.hypot(car.x-lastSent.x,car.z-lastSent.z)):0;
+      const nextMode=Math.hypot(car.x-target.x,car.z-target.z)<=TARGET_OBSERVATION_RADIUS?'target':'near';
+      if(mode!==nextMode){tracks.clear();mode=nextMode;}
+      const requiredSeconds=mode==='target'?TARGET_OBSERVATION_SECONDS:OBSERVATION_SECONDS;
+      const radius=mode==='target'?300:200;
       const ids=new Set(balloons.map(b=>b.id));
       for(const id of tracks.keys())if(!ids.has(id))tracks.delete(id);
-      choices=balloons.filter(b=>Math.hypot(car.x-b.x,car.z-b.z)<=200).map(b=>{
+      choices=balloons.filter(b=>!sent[mode].has(b.id)&&Math.hypot(car.x-b.x,car.z-b.z)<=radius).map(b=>{
         let track=tracks.get(b.id);
         // Reset on discontinuities (including fleet respawns), motion or altitude changes.
         if(!track||Math.abs(car.speedMps)>.05||time-track.lastTime>1||Math.hypot(car.x-track.carX,car.z-track.carZ)>5||Math.hypot(b.x-track.lastX,b.z-track.lastZ)>25||Math.abs(b.y-track.y)>30){
@@ -61,12 +63,12 @@ export function createRadioObserver({now=()=>performance.now()}={}){
         }
         track.lastTime=time;track.lastX=b.x;track.lastZ=b.z;
         track.samples.push({time,x:b.x,y:b.y,z:b.z});
-        while(track.samples.length>2&&track.samples[1].time<=time-OBSERVATION_SECONDS)track.samples.shift();
+        while(track.samples.length>2&&track.samples[1].time<=time-requiredSeconds)track.samples.shift();
         const sample=track.samples[0],span=time-sample.time;
         const duration=time-track.time;
-        const ready=duration>=OBSERVATION_SECONDS&&cooldown===0&&distanceRemaining===0&&Math.abs(car.speedMps)<=.05;
-        return {...b,seconds:Math.min(OBSERVATION_SECONDS,duration),cooldown,distanceRemaining,ready,
-          report:ready?{source:b.id,name:b.name,x:(b.x+sample.x)/2,z:(b.z+sample.z)/2,y:(b.y+sample.y)/2,
+        const ready=duration>=requiredSeconds&&Math.abs(car.speedMps)<=.05;
+        return {...b,seconds:Math.min(requiredSeconds,duration),requiredSeconds,mode,ready,
+          report:ready?{mode,source:b.id,name:b.name,x:(b.x+sample.x)/2,z:(b.z+sample.z)/2,y:(b.y+sample.y)/2,
             vx:(b.x-sample.x)/span,vz:(b.z-sample.z)/span,time,confidence:.9}:null};
       });
       const nearby=new Set(choices.map(b=>b.id));
@@ -81,10 +83,10 @@ export function createRadioObserver({now=()=>performance.now()}={}){
       if(!lastCar||Math.abs(lastCar.speedMps)>.05)return null;
       const choice=capture(id);if(!choice)return null;
       const report=choice.report;
-      lastSent={time,x:report.crewX,z:report.crewZ};
+      sent[report.mode].add(id);
       pending=null;tracks.clear();
-      // Applies across all balloons, so switching targets cannot bypass the limits.
-      choices=choices.map(b=>({...b,ready:false,report:null,seconds:0,cooldown:REPORT_INTERVAL,distanceRemaining:REPORT_DISTANCE}));
+      // Each balloon has one independent report in each observation area.
+      choices=[];
       // The pilot receives the measured vector as a new message, not an observation timestamp.
       return {...report,time};
     },

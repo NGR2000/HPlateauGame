@@ -1,27 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createRadioObserver,createWindKnowledge,observationBonus,insideTargetZone,markerLanding} from '../game/prototype/radioObservation.js';
+import {createRadioObserver as createObserver,createWindKnowledge,observationBonus,insideTargetZone,markerLanding} from '../game/prototype/radioObservation.js';
 import {creativePoints,confirmationStatus} from '../game/prototype/chaseRules.js';
 import {createTeamPilot,predictStep} from '../game/prototype/creativeAirspace.js';
 
-test('live observations require ten seconds; repeats require a fresh interval; movement, disappearance and respawn reset tracks',()=>{
+// Existing capture/physics cases run in the outside-target observation area.
+function createRadioObserver(options){
+  const observer=createObserver(options),update=observer.update;
+  observer.update=(time,car,balloons)=>update(time,car,balloons,{x:10000,z:0});
+  return observer;
+}
+test('outside observations require ten seconds and reset on movement, disappearance, respawn and altitude changes',()=>{
   const observer=createRadioObserver(),car={x:0,z:0,speedMps:0};
   const balloon=t=>({id:'red',name:'赤',x:t,y:100,z:0});
   for(let t=0;t<10;t++)assert.equal(observer.update(t,car,[balloon(t)])[0].ready,false);
   assert.equal(observer.update(10,car,[balloon(10)])[0].ready,true);
   const report=observer.send('red',10);assert.equal(report.vx,1);assert.equal(report.vz,0);
   assert.equal(observer.send('red',10),null);
-  for(let t=11;t<=190;t++)assert.equal(observer.update(t,car,[balloon(t)])[0].ready,false);
-  const moved={...car,x:300};
-  for(let t=191;t<201;t++)assert.equal(observer.update(t,moved,[balloon(t)])[0].ready,false);
-  assert.equal(observer.update(201,moved,[balloon(201)])[0].ready,true);
-  assert.ok(observer.send('red',201));
-  observer.update(202,{...moved,speedMps:1},[balloon(202)]);
-  assert.equal(observer.update(203,moved,[balloon(203)])[0].ready,false);
-  observer.update(204,moved,[]);
-  assert.equal(observer.update(205,moved,[balloon(205)])[0].seconds,0);
-  assert.equal(observer.update(206,moved,[{...balloon(206),x:150}])[0].seconds,0);
-  assert.equal(observer.update(207,moved,[{...balloon(207),y:150}])[0].seconds,0);
+  assert.deepEqual(observer.update(11,car,[balloon(11)]),[]);
+  const other=t=>({...balloon(t),id:'blue'});
+  observer.update(12,{...car,speedMps:1},[other(12)]);
+  assert.equal(observer.update(13,car,[other(13)])[0].ready,false);
+  observer.update(14,car,[]);
+  assert.equal(observer.update(15,car,[other(15)])[0].seconds,0);
+  assert.equal(observer.update(16,car,[{...other(16),x:150}])[0].seconds,0);
+  assert.equal(observer.update(17,car,[{...other(17),y:150}])[0].seconds,0);
 });
 test('wind knowledge is local to altitude, location and time; useful reports actually change pilot altitude',()=>{
   let time=10;
@@ -100,35 +103,60 @@ test('fresh live wind reports improve an actual marker landing in a paired appro
 });
 
 
-test('all balloons share both the 180-second and 300-metre limits, including exact boundaries',()=>{
-  const observer=createRadioObserver(),car={x:0,z:0,speedMps:0};
-  const balloons=t=>['red','blue'].map(id=>({id,name:id,x:t+150,y:100,z:0}));
-  for(let t=0;t<=10;t++)observer.update(t,car,balloons(t));
-  assert.ok(observer.send('red',10));
-  assert.equal(observer.send('blue',10),null);
-  // Moving far enough does not remove the time requirement.
-  for(let t=11;t<190;t++)assert.ok(!observer.update(t,{...car,x:300},balloons(t))[1].ready);
-  assert.equal(observer.update(190,{...car,x:300},balloons(190))[1].ready,true);
-  // Passing enough time does not remove the distance requirement.
-  assert.equal(observer.update(190,{...car,x:299.99},balloons(190))[1].ready,false);
-  assert.equal(observer.update(191,{...car,x:300},balloons(191))[1].ready,true);
-  const report=observer.send('blue',191);
-  assert.equal(report.crewX,300);assert.equal(report.crewZ,0);
-  assert.equal(observer.send('red',191),null);
-  // Returning to the last sending point still requires moving away again.
-  for(let t=192;t<=371;t++)assert.equal(observer.update(t,{...car,x:300},balloons(150))[0].ready,false);
+test('each balloon can report once in each area, in either order, without shared cooldown or travel',()=>{
+ for(const first of ['target','near']){
+  const observer=createObserver(),car={x:first==='target'?400:401,z:0,speedMps:0};
+  const balloons=['red','blue'].map(id=>({id,name:id,x:400,y:100,z:0}));
+  const duration=first==='target'?20:10;
+  for(let t=0;t<=duration;t++)observer.update(t,car,balloons);
+  assert.equal(observer.send('red',duration).mode,first);
+  // A different balloon remains eligible without waiting three minutes or moving.
+  for(let t=duration+1;t<=duration*2+1;t++)observer.update(t,car,balloons);
+  assert.equal(observer.send('blue',duration*2+1).mode,first);
+  assert.deepEqual(observer.update(duration*2+2,car,balloons),[]);
+  car.x=first==='target'?401:400;
+  const secondDuration=first==='target'?10:20;
+  for(let t=100;t<=100+secondDuration;t++)observer.update(t,car,balloons);
+  assert.ok(observer.send('red',100+secondDuration));
+  for(let t=200;t<=200+secondDuration;t++)observer.update(t,car,balloons);
+  assert.ok(observer.send('blue',200+secondDuration));
+  assert.deepEqual(observer.update(250,car,balloons),[]);
+  car.x=first==='target'?400:401;
+  assert.deepEqual(observer.update(251,car,balloons),[]);
+ }
 });
-
-
-test('waiting three minutes still reports the most recent ten seconds of movement',()=>{
- const observer=createRadioObserver(),car={x:0,z:0,speedMps:0};
- for(let t=0;t<=10;t++)observer.update(t,car,[{id:'b',name:'b',x:0,y:100,z:0}]);
- assert.ok(observer.send('b',10));
- for(let t=11;t<=190;t++)observer.update(t,{...car,x:300},[{id:'b',name:'b',x:300+Math.max(0,t-180)*2,y:100,z:0}]);
- const report=observer.send('b',190);
- assert.ok(report);assert.equal(report.vx,2);assert.equal(report.x,310);
+test('400m boundary selects one area; radius, duration and crossing resets are enforced',()=>{
+ const observer=createObserver(),car={x:400,z:0,speedMps:0};
+ const balloons=[{id:'edge',x:700,y:100,z:0},{id:'far',x:700.01,y:100,z:0}];
+ for(let t=0;t<20;t++){
+  const choices=observer.update(t,car,balloons);
+  assert.equal(choices.length,1);assert.equal(choices[0].ready,false);
+  assert.equal(choices[0].requiredSeconds,20);assert.equal(choices[0].mode,'target');
+ }
+ assert.equal(observer.update(20,car,balloons)[0].ready,true);
+ // Cross before capture: a different observation begins, with its own range.
+ car.x=400.01;
+ assert.deepEqual(observer.update(21,car,balloons),[]);
+ const near=[{id:'edge',x:600.01,y:100,z:0},{id:'far',x:600.02,y:100,z:0}];
+ for(let t=22;t<32;t++)assert.equal(observer.update(t,car,near)[0].ready,false);
+ assert.equal(observer.update(32,car,near)[0].ready,true);
+ car.x=400;
+ assert.equal(observer.update(33,car,near)[0].seconds,0);
+ assert.equal(observer.update(33,car,near)[0].mode,'target');
 });
-
+test('captured target report retains its area and data across the boundary; expiry consumes no quota',()=>{
+ let wall=0;const observer=createObserver({now:()=>wall}),car={x:400,z:0,speedMps:0};
+ const b={id:'red',name:'赤',x:500,y:100,z:0};
+ for(let t=0;t<=20;t++)observer.update(t,car,[b]);
+ const captured=observer.capture('red');assert.equal(captured.mode,'target');
+ observer.update(21,{...car,x:401},[]);
+ assert.equal(observer.send('red',21).mode,'target');
+ for(let t=22;t<=32;t++)observer.update(t,{...car,x:401},[b]);
+ assert.equal(observer.capture('red').mode,'near');
+ wall=15000;assert.equal(observer.pending(),null);
+ for(let t=33;t<=43;t++)observer.update(t,{...car,x:401},[b]);
+ assert.equal(observer.send('red',43).mode,'near');
+});
 
 test('a completed observation is held without rejudging traffic and transmits the captured data',()=>{
  let wall=0;
@@ -155,5 +183,5 @@ test('the held button expires after fifteen real seconds, even without advancing
  wall=15000;assert.equal(observer.pending(),null);assert.equal(observer.send('red',10),null);
  assert.equal(observer.update(10,car,[{id:'red',name:'赤',x:10,y:100,z:0}])[0].ready,false);
  for(let t=11;t<=20;t++)observer.update(t,car,[{id:'red',name:'赤',x:t,y:100,z:0}]);
- assert.ok(observer.capture('red')); // Expiry without sending did not start the 3-minute cooldown.
+ assert.ok(observer.capture('red')); // Expiry without sending did not consume the report quota.
 });
