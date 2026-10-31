@@ -25,7 +25,7 @@ import { loadTeamBalloonModel, createTeamBalloon, markTeamBalloon, createCreativ
 import { loadCity, creativeLaunch, CATALOG } from './cityLayout.js';
 import { loadCityModels, createCityView, buildingBlocks } from './cityView.js';
 import { createTeamPilot, segmentViolation } from './creativeAirspace.js';
-import {createRadioObserver,createWindKnowledge,observationBonus,insideTargetZone,MARKER_DRAG,MARKER_WIND_TAU} from './radioObservation.js';
+import {createRadioObserver,createWindKnowledge,observationBonus,insideTargetZone,MARKER_DRAG,MARKER_WIND_TAU,TARGET_OBSERVATION_RADIUS} from './radioObservation.js';
 
 // 創作の入口は同じ場所・風・チェイスモードから始める。
 // 共有URLの実在世界向け設定が混ざっても、この舞台を移動させない。
@@ -1517,10 +1517,10 @@ function updateRadioUi(){
   const b=choices.find(b=>b.id===select.value),car=raceCar?.info();
   const stationary=car&&Math.abs(car.speedMps)<=.05;
   const altitude=b?` · 約${Math.round(b.y*M2FT/50)*50}ft MSL`:'';
-  const targetObservation=car&&Math.hypot(car.x-TARGET_XZ.x,car.z-TARGET_XZ.z)<=400;
+  const targetObservation=car&&Math.hypot(car.x-TARGET_XZ.x,car.z-TARGET_XZ.z)<=TARGET_OBSERVATION_RADIUS;
   const observationName=targetObservation?'ターゲット付近':'真下';
   $('radio-observation-hint').textContent=!stationary?'停車して観測してください':!b?
-    `この範囲で未報告の他機から水平${targetObservation?300:200}m以内へ移動してください`:
+    `この範囲で未報告の他機から水平200m以内へ移動してください`:
     b.ready?`${b.name}${altitude} · ${observationName}の上空風を報告できます（＋20点）`:
     `${b.name}${altitude} · ${observationName}の観測 ${Math.floor(b.seconds)}/${b.requiredSeconds}ゲーム秒`;
   $('radio-wind-send').disabled=!chaseRace.reported||!b?.ready||!stationary||chaseRace.finished;

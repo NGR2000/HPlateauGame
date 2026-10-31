@@ -1,10 +1,10 @@
-// Observation clocks and expiry use simulation seconds. Positions/heights stay in metres.
+// Observation uses simulation seconds; button expiry uses real milliseconds. Positions/heights stay in metres.
 export const MARKER_DRAG = 9.81/10;
 export const MARKER_WIND_TAU = 1.5;
-export const OBSERVATION_SECONDS = 10;
-export const TARGET_OBSERVATION_SECONDS = 20;
-export const TARGET_OBSERVATION_RADIUS = 400;
-export const REPORT_HOLD_MS = 15000;
+export const OBSERVATION_SECONDS = 5;
+export const TARGET_OBSERVATION_SECONDS = 3;
+export const TARGET_OBSERVATION_RADIUS = 200;
+export const REPORT_HOLD_MS = 5000;
 export const TARGET_ZONE_RADIUS = 100;
 export const insideTargetZone = (p, target={x:0,z:0}) => Math.hypot(p.x-target.x,p.z-target.z)<=TARGET_ZONE_RADIUS;
 export function createWindKnowledge(baseWind, now=()=>0) {
@@ -52,7 +52,7 @@ export function createRadioObserver({now=()=>performance.now()}={}){
       const nextMode=Math.hypot(car.x-target.x,car.z-target.z)<=TARGET_OBSERVATION_RADIUS?'target':'near';
       if(mode!==nextMode){tracks.clear();mode=nextMode;}
       const requiredSeconds=mode==='target'?TARGET_OBSERVATION_SECONDS:OBSERVATION_SECONDS;
-      const radius=mode==='target'?300:200;
+      const radius=200;
       const ids=new Set(balloons.map(b=>b.id));
       for(const id of tracks.keys())if(!ids.has(id))tracks.delete(id);
       choices=balloons.filter(b=>!sent[mode].has(b.id)&&Math.hypot(car.x-b.x,car.z-b.z)<=radius).map(b=>{

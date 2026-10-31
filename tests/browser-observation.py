@@ -52,46 +52,51 @@ with sync_playwright() as p:
     def state():
         return page.evaluate('radioFixture.state()')
 
-    for t in range(11):
+    for t in range(6):
         feed(t, 600, 620+t)
     assert state()['pending']['mode'] == 'near'
     context = page.locator('#radio-context').text_content()
-    feed(11, 300, None, speed=1)
+    feed(6, 150, None, speed=1)
     page.evaluate('radioFixture.competing()')
     assert page.locator('#radio-context').text_content() == context
     assert page.locator('#chase-report-quick').is_disabled()
     assert page.locator('#radio-balloon').is_disabled()
-    feed(12, 300)
+    feed(7, 150)
     page.locator('#chase-report-quick').click()
     report = state()['transmitted']
-    assert report['mode'] == 'near' and report['x'] == 625 and report['vx'] == 1
+    assert report['mode'] == 'near' and report['x'] == 622.5 and report['vx'] == 1
     assert state()['points'] == 20
     page.evaluate('radioFixture.clearCrew()')
-    for t in range(13, 33):
-        feed(t, 300, 500+t-13)
+    for t in range(8, 11):
+        feed(t, 150, 250+t-8)
     assert state()['pending'] is None
-    assert '19/20ゲーム秒' in page.locator('#radio-context').text_content()
-    feed(33, 300, 520)
+    assert '2/3ゲーム秒' in page.locator('#radio-context').text_content()
+    # Crew requests still take priority before a wind result is captured.
+    page.evaluate('radioFixture.competing()')
+    feed(11, 150, 253)
+    assert state()['pending'] is None
+    assert page.locator('#chase-report-quick').text_content() == '上空クリアです。'
+    page.evaluate('radioFixture.clearCrew()')
+    feed(11, 150, 253)
     assert state()['pending']['mode'] == 'target'
     page.locator('#chase-report-quick').click()
     assert state()['points'] == 40
-    feed(34, 300, 521)
+    feed(12, 150, 254)
     assert state()['choices'] == []
-    feed(35, 600, 620)
+    feed(13, 600, 620)
     assert state()['choices'] == []
     # Another aircraft has its own quota, with no waiting or travel requirement.
-    for t in range(36, 56):
-        feed(t, 300, 500+t-36, name='青', identity='blue')
-    feed(56, 300, 520, name='青', identity='blue')
+    for t in range(14, 18):
+        feed(t, 150, 250+t-14, name='青', identity='blue')
     assert state()['pending']['id'] == 'blue'
-    page.clock.fast_forward(15001)
+    page.clock.fast_forward(5001)
     assert state()['pending'] is None
     assert state()['points'] == 40
-    for t in range(57, 78):
-        feed(t, 300, 530, name='青', identity='blue')
+    for t in range(18, 22):
+        feed(t, 150, 260, name='青', identity='blue')
     assert state()['pending']['id'] == 'blue'
     page.locator('#chase-report-quick').click()
     assert state()['points'] == 60
     assert not errors, errors
-    print('RADIO: two areas, independent aircraft, captured send, moving hold, competing request and expiry passed')
+    print('RADIO: 5s/3s observation, independent quotas, crew priority, captured send and 5-real-second expiry passed')
     browser.close()
