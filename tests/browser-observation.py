@@ -24,6 +24,16 @@ window.radioFixture={
  },
  competing(){raceAutopilot.crewCard=()=>({kind:'overhead',label:'上空クリアです。',enabled:true});updateRadioUi();},
  clearCrew(){raceAutopilot.crewCard=()=>null;},
+ settle(useful){
+  pendingReports.length=0;
+  state.pos.set(-1000,100,0);
+  raceAutopilot.usesObservation=()=>useful;
+  const b={id:'bonus-test',name:'テスト気球',x:100,y:100,z:0};
+  pendingReports.push({report:{source:b.id,name:b.name,y:100},before:()=>({vx:0,vz:0}),after:()=>({vx:1,vz:0}),start:{...b},time:0});
+  fixtureBalloons=[{...b,x:120}];flightSeconds=20;lastObservationUpdate=-1;
+  updateObservations();
+ },
+ notice(){chaseRadio('通常の無線');},
  state(){return {pending:radioObserver.pending(),choices:radioObserver.choices(),transmitted,points:chaseRace.windPoints};}
 };
 document.body.dataset.radioFixture='ready';
@@ -52,7 +62,7 @@ with sync_playwright() as p:
     def state():
         return page.evaluate('radioFixture.state()')
 
-    for t in range(6):
+    for t in range(4):
         feed(t, 600, 620+t)
     assert state()['pending']['mode'] == 'near'
     context = page.locator('#radio-context').text_content()
@@ -64,7 +74,7 @@ with sync_playwright() as p:
     feed(7, 150)
     page.locator('#chase-report-quick').click()
     report = state()['transmitted']
-    assert report['mode'] == 'near' and report['x'] == 622.5 and report['vx'] == 1
+    assert report['mode'] == 'near' and report['x'] == 621.5 and report['vx'] == 1
     assert state()['points'] == 20
     page.evaluate('radioFixture.clearCrew()')
     for t in range(8, 11):
@@ -97,6 +107,24 @@ with sync_playwright() as p:
     assert state()['pending']['id'] == 'blue'
     page.locator('#chase-report-quick').click()
     assert state()['points'] == 60
+    # Unused information produces no new message or history entry.
+    log = page.locator('#chase-radio-log').text_content()
+    page.evaluate('radioFixture.settle(false)')
+    assert page.locator('#chase-radio-log').text_content() == log
+    assert state()['points'] == 60
+    page.evaluate('radioFixture.settle(true)')
+    assert state()['points'] == 160
+    assert page.locator('#chase-toast').text_content() == 'パイロット：その風、助かりました。＋100点'
+    assert page.locator('#chase-toast').is_visible()
+    page.clock.fast_forward(3001)
+    assert page.locator('#chase-toast').is_hidden()
+    assert 'その風、助かりました。＋100点' in page.locator('#chase-radio-log').text_content()
+    page.evaluate('radioFixture.notice()')
+    page.clock.fast_forward(3001)
+    assert page.locator('#chase-toast').is_visible()
+    page.clock.fast_forward(5000)
+    assert page.locator('#chase-toast').is_hidden()
     assert not errors, errors
-    print('RADIO: 5s/3s observation, independent quotas, crew priority, captured send and 5-real-second expiry passed')
+    print('BONUS: no message without bonus; short bonus message closes after 3 real seconds and remains in history; ordinary radio retains 8 seconds')
+    print('RADIO: 3s observation in both areas, independent quotas, crew priority, captured send and 5-real-second expiry passed')
     browser.close()

@@ -10,13 +10,13 @@ function createRadioObserver(options){
   observer.update=(time,car,balloons)=>update(time,car,balloons,{x:10000,z:0});
   return observer;
 }
-test('outside observations require five seconds and reset on movement, disappearance, respawn and altitude changes',()=>{
+test('outside observations require three seconds and reset on movement, disappearance, respawn and altitude changes',()=>{
   const observer=createRadioObserver(),car={x:0,z:0,speedMps:0};
   const balloon=t=>({id:'red',name:'赤',x:t,y:100,z:0});
-  for(let t=0;t<5;t++)assert.equal(observer.update(t,car,[balloon(t)])[0].ready,false);
-  assert.equal(observer.update(5,car,[balloon(5)])[0].ready,true);
-  const report=observer.send('red',5);assert.equal(report.vx,1);assert.equal(report.vz,0);
-  assert.equal(observer.send('red',5),null);
+  for(let t=0;t<3;t++)assert.equal(observer.update(t,car,[balloon(t)])[0].ready,false);
+  assert.equal(observer.update(3,car,[balloon(3)])[0].ready,true);
+  const report=observer.send('red',3);assert.equal(report.vx,1);assert.equal(report.vz,0);
+  assert.equal(observer.send('red',3),null);
   assert.deepEqual(observer.update(11,car,[balloon(11)]),[]);
   const other=t=>({...balloon(t),id:'blue'});
   observer.update(12,{...car,speedMps:1},[other(12)]);
@@ -107,7 +107,7 @@ test('each balloon can report once in each area, in either order, without shared
  for(const first of ['target','near']){
   const observer=createObserver(),car={x:first==='target'?200:201,z:0,speedMps:0};
   const balloons=['red','blue'].map(id=>({id,name:id,x:200,y:100,z:0}));
-  const duration=first==='target'?3:5;
+  const duration=3;
   for(let t=0;t<=duration;t++)observer.update(t,car,balloons);
   assert.equal(observer.send('red',duration).mode,first);
   // A different balloon remains eligible without waiting three minutes or moving.
@@ -115,7 +115,7 @@ test('each balloon can report once in each area, in either order, without shared
   assert.equal(observer.send('blue',duration*2+1).mode,first);
   assert.deepEqual(observer.update(duration*2+2,car,balloons),[]);
   car.x=first==='target'?201:200;
-  const secondDuration=first==='target'?5:3;
+  const secondDuration=3;
   for(let t=100;t<=100+secondDuration;t++)observer.update(t,car,balloons);
   assert.ok(observer.send('red',100+secondDuration));
   for(let t=200;t<=200+secondDuration;t++)observer.update(t,car,balloons);
@@ -136,12 +136,12 @@ test('200m boundary selects one area; both ranges are 200m and crossing restarts
  assert.equal(observer.update(3,car,balloons)[0].ready,true);
  car.x=200.01;
  const near=[{id:'edge',x:400.01,y:100,z:0},{id:'far',x:400.02,y:100,z:0}];
- for(let t=4;t<9;t++){
+ for(let t=4;t<7;t++){
   const choices=observer.update(t,car,near);
   assert.equal(choices.length,1);assert.equal(choices[0].ready,false);
-  assert.equal(choices[0].requiredSeconds,5);
+  assert.equal(choices[0].requiredSeconds,3);
  }
- assert.equal(observer.update(9,car,near)[0].ready,true);
+ assert.equal(observer.update(7,car,near)[0].ready,true);
  car.x=200;
  assert.equal(observer.update(10,car,balloons)[0].seconds,0);
  assert.equal(observer.update(10,car,balloons)[0].mode,'target');
@@ -163,24 +163,24 @@ test('captured target report retains its area and data across the boundary; expi
 test('a completed observation is held without rejudging traffic and transmits the captured data',()=>{
  let wall=0;
  const observer=createRadioObserver({now:()=>wall}),car={x:0,z:0,speedMps:0};
- for(let t=0;t<=5;t++)observer.update(t,car,[{id:'red',name:'赤',x:t,y:100+t,z:0}]);
+ for(let t=0;t<=3;t++)observer.update(t,car,[{id:'red',name:'赤',x:t,y:100+t,z:0}]);
  const pending=observer.capture('red');
  assert.ok(pending);assert.equal(pending.report.vx,1);
  wall=4000;
  observer.update(200,{x:900,z:0,speedMps:1},[]);
  assert.equal(observer.pending(),pending);
- assert.equal(observer.choices()[0].name,'赤');assert.equal(observer.choices()[0].y,102.5);
+ assert.equal(observer.choices()[0].name,'赤');assert.equal(observer.choices()[0].y,101.5);
  assert.equal(observer.send('red',200),null); // A parked car is still required to transmit.
  observer.update(201,{x:900,z:0,speedMps:0},[{id:'red',name:'別名',x:2000,y:900,z:0}]);
  const report=observer.send('red',201);
- assert.equal(report.name,'赤');assert.equal(report.y,102.5);assert.equal(report.vx,1);
+ assert.equal(report.name,'赤');assert.equal(report.y,101.5);assert.equal(report.vx,1);
  assert.equal(report.crewX,0);assert.equal(report.time,201);
  assert.equal(observer.pending(),null);assert.equal(observer.send('red',201),null);
 });
 test('the held button expires after five real seconds, even without advancing the simulation',()=>{
  let wall=0;
  const observer=createRadioObserver({now:()=>wall}),car={x:0,z:0,speedMps:0};
- for(let t=0;t<=5;t++)observer.update(t,car,[{id:'red',name:'赤',x:t,y:100,z:0}]);
+ for(let t=0;t<=3;t++)observer.update(t,car,[{id:'red',name:'赤',x:t,y:100,z:0}]);
  observer.capture('red');wall=4999;assert.ok(observer.pending());
  wall=5000;assert.equal(observer.pending(),null);assert.equal(observer.send('red',10),null);
  assert.equal(observer.update(10,car,[{id:'red',name:'赤',x:10,y:100,z:0}])[0].ready,false);

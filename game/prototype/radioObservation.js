@@ -1,8 +1,8 @@
 // Observation uses simulation seconds; button expiry uses real milliseconds. Positions/heights stay in metres.
 export const MARKER_DRAG = 9.81/10;
 export const MARKER_WIND_TAU = 1.5;
-export const OBSERVATION_SECONDS = 5;
-export const TARGET_OBSERVATION_SECONDS = 3;
+export const OBSERVATION_SECONDS = 3;
+export const TARGET_OBSERVATION_SECONDS = OBSERVATION_SECONDS;
 export const TARGET_OBSERVATION_RADIUS = 200;
 export const REPORT_HOLD_MS = 5000;
 export const TARGET_ZONE_RADIUS = 100;

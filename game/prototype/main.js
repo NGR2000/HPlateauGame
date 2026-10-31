@@ -1429,7 +1429,7 @@ if(chaseMode){
 }
 
 // 無線は短時間だけ表示。全文と得点はメニューから確認できる。
-function chaseRadio(message) {
+function chaseRadio(message, durationMs = 8000) {
   chaseRadioLog.unshift(message);
   chaseRadioLog.length = Math.min(chaseRadioLog.length, 8);
   document.getElementById('chase-radio-log').textContent = chaseRadioLog.join('\n');
@@ -1437,7 +1437,7 @@ function chaseRadio(message) {
   toast.textContent = message;
   toast.hidden = false;
   clearTimeout(chaseToastTimer);
-  chaseToastTimer = setTimeout(() => { toast.hidden = true; }, 8000);
+  chaseToastTimer = setTimeout(() => { toast.hidden = true; }, durationMs);
 }
 
 function reportStatus() {
@@ -1592,8 +1592,10 @@ function updateObservations(){
       (TARGET_XZ.x-state.pos.x)*actual.vx+(TARGET_XZ.z-state.pos.z)*actual.vz>0;
     const bonus=observationBonus({before:pending.before(y,x,z),after:pending.after(y,x,z),actual,useful});
     pendingReports.splice(i,1);
-    if(bonus){chaseRace.windPoints+=bonus;chaseRadio(`パイロット：${pending.report.name}の約${Math.round(pending.report.y*M2FT/50)*50}ftの報告で、ターゲットへ向かう風の予測が改善しました。有益な情報 ＋${bonus}点。`);}
-    else chaseRadio(`パイロット：${pending.report.name}の報告を照合しました。今回は追加点なし。観測報告の20点は獲得済みです。`);
+    if(bonus){
+      chaseRace.windPoints+=bonus;
+      chaseRadio(`パイロット：その風、助かりました。＋${bonus}点`,3000);
+    }
   }
 }
 
