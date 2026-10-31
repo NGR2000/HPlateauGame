@@ -1,3 +1,4 @@
+import {createCrewCoordination} from './crewCoordination.js';
 import {markerLanding} from './radioObservation.js';
 // Game airspace only. All numeric altitudes are MSL metres.
 export const BALLOON_HEIGHT = 28;
@@ -45,9 +46,10 @@ export function predictStep(state,dt,control,windAt,getHeight){
   if(y<=ground){y=ground;vy=Math.max(0,vy);}
   return {x,y,z,vy,heat,grounded:y<=ground+.05};
 }
-export function createTeamPilot({windAt,targetX=0,targetZ=0,airspace,getHeight=()=>0,onRadio=()=>{},forecastWindAt=windAt,planMarker=false}){
+export function createTeamPilot({windAt,targetX=0,targetZ=0,airspace,getHeight=()=>0,onRadio=()=>{},forecastWindAt=windAt,planMarker=false,crewCheck=false,getTraffic=()=>[]}){
   let target=null,untilScan=0,drop=false,notified=false,previousMessage='',clearance=false,lastVy=0,lastHeat=.5,dropCheck=0;
   const observedAltitudes=[];
+  const crew=crewCheck?createCrewCoordination({airspace,windAt:forecastWindAt,getTraffic,onRadio}):null;
   function pick(pos,vy,heat){
     const current=limitsAt(pos.x,pos.z,airspace);
     const candidates=new Set([80,120,160,210,260,310,360,410,460,510,550,target,current.top-50,...observedAltitudes]);
@@ -80,7 +82,7 @@ export function createTeamPilot({windAt,targetX=0,targetZ=0,airspace,getHeight=(
     if(best!==null){
       const msg=best>pos.y+40?'PZと最高高度を確認して、上の層の風へ移ります。'
         :best<pos.y-40?'最高高度とPZを確認して、低い層の風に移ります。':'この高度の風でターゲットを目指します。';
-      if(msg!==previousMessage){onRadio(`パイロット：${msg}`);previousMessage=msg;}
+      if(!crewCheck&&msg!==previousMessage){onRadio(`パイロット：${msg}`);previousMessage=msg;}
     }
     clearance=best!==null;
     return best;
@@ -90,8 +92,12 @@ export function createTeamPilot({windAt,targetX=0,targetZ=0,airspace,getHeight=(
       lastVy=vy;lastHeat=heat;untilScan-=dt;dropCheck-=dt;
       if(untilScan<=0||target===null){target=pick(pos,vy,heat);untilScan=4;}
       if(target===null)return {burner:false,rip:true,blocked:true};
-      return heightControl(pos.y,vy,heat,target);
+      const coordination=crew?.update(pos,target,dt);
+      if(coordination?.blocked)return {burner:false,rip:true,...coordination};
+      return heightControl(pos.y,vy,heat,coordination?.target??target);
     },
+    crewCard:stationary=>crew?.card(stationary)||null,
+    replyCrew:stationary=>crew?.reply(stationary)||null,
     suggestAltitude(alt){if(Number.isFinite(alt)){observedAltitudes.push(alt);if(observedAltitudes.length>20)observedAltitudes.shift();untilScan=0;}},
     usesObservation(r,pos){return target!==null&&Math.abs(target-r.y)<120&&Math.hypot(pos.x-r.x,pos.z-r.z)<1500;},
     shouldDrop(pos){

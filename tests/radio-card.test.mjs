@@ -14,3 +14,11 @@ test('contextual radio hides unavailable actions and prioritizes confirmations w
  assert.equal(radioCard({...state,confirmation:{landing:true}}).kind,'landing');
  assert.equal(radioCard({...state,finished:true,confirmation:{drop:true}}),null);
 });
+test('crew request has one-card priority only when stopped, and wind is locked before ground report',()=>{
+ const state={finished:false,confirmation:{},stationary:true,balloon:{ready:true},groundReady:false,windUnlocked:false};
+ assert.equal(radioCard(state),null);
+ const crew={kind:'overhead',label:'上空クリアです。',enabled:true};
+ assert.equal(radioCard({...state,crew,confirmation:{drop:true}}),crew);
+ assert.equal(radioCard({...state,crew,stationary:false}),null);
+ assert.equal(radioCard({...state,windUnlocked:true}).kind,'wind');
+});

@@ -19,8 +19,8 @@ export function chasePoints({ caught = false, afterLanding = false, reported = f
 // Creative mission scoring; kept separate from legacy chase high scores.
 export function creativePoints(race) {
   const recovery=race.caught?(race.afterLanding?500:1000):0;
-  const ground=race.reported?50:0,drop=race.dropConfirmed?50:0,wind=race.windPoints||0;
-  return {recovery,ground,drop,wind,report:ground+drop+wind,total:recovery+ground+drop+wind};
+  const ground=race.reported?50:0,drop=race.dropConfirmed?50:0,wind=race.windPoints||0,crew=race.crewPoints||0;
+  return {recovery,ground,drop,wind,crew,report:ground+drop+wind+crew,total:recovery+ground+drop+wind+crew};
 }
 export function confirmationStatus({active,stopped,carDistance,dropped,landed,dropConfirmed,landingConfirmed,landingInZone,dropDistance}) {
   return {
