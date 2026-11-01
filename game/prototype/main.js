@@ -1429,12 +1429,12 @@ if(chaseMode){
 }
 
 // 無線は短時間だけ表示。全文と得点はメニューから確認できる。
-function chaseRadio(message, durationMs = 8000) {
+function chaseRadio(message, durationMs = 8000, displayMessage = message) {
   chaseRadioLog.unshift(message);
   chaseRadioLog.length = Math.min(chaseRadioLog.length, 8);
   document.getElementById('chase-radio-log').textContent = chaseRadioLog.join('\n');
   const toast = document.getElementById('chase-toast');
-  toast.textContent = message;
+  toast.textContent = displayMessage;
   toast.hidden = false;
   clearTimeout(chaseToastTimer);
   chaseToastTimer = setTimeout(() => { toast.hidden = true; }, durationMs);
@@ -1574,7 +1574,7 @@ function sendUpperWind(){
   const b=creativeFleet.observations().find(b=>b.id===report.source);
   if(b)pendingReports.push({report,before,after,start:{...b},time:flightSeconds});
   const heading=(Math.atan2(report.vx,-report.vz)*180/Math.PI+360)%360;
-  chaseRadio(`1号車：${report.name}、約${Math.round(report.y*M2FT/50)*50}ft MSL、${Math.round(heading)}°へ${(Math.hypot(report.vx,report.vz)/.514444).toFixed(1)}ktで流れています。＋20点。パイロット：受信。飛行可能な高度と風の予測を再検討します。`);
+  chaseRadio(`1号車：${report.name}、約${Math.round(report.y*M2FT/50)*50}ft MSL、${Math.round(heading)}°へ${(Math.hypot(report.vx,report.vz)/.514444).toFixed(1)}ktで流れています。＋20点。パイロット：了解。`,3000,'パイロット：了解。');
   updateChaseMission();
 }
 function updateObservations(){
@@ -2045,7 +2045,10 @@ function applyRaceHudMode() {
       document.getElementById(id).addEventListener('click', () => { menu.open = false; });
     }
   }
-  resetRaceControls = bindCarControls(raceCarInput);
+  resetRaceControls = bindCarControls(raceCarInput, { recoverRelease: creativeWorld });
+  if (creativeWorld) document.getElementById('mobile-menu').addEventListener('toggle', event => {
+    if (event.target.open) resetRaceControls?.();
+  });
   document.getElementById('instruments-pilot-only').style.display = 'none';
   document.getElementById('instruments-race-only').style.display = '';
   document.getElementById('target-label').textContent = '気球→ターゲット';

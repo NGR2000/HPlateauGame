@@ -76,6 +76,10 @@ with sync_playwright() as p:
     report = state()['transmitted']
     assert report['mode'] == 'near' and report['x'] == 621.5 and report['vx'] == 1
     assert state()['points'] == 20
+    assert page.locator('#chase-toast').text_content() == 'パイロット：了解。'
+    assert '赤' in page.locator('#chase-radio-log').text_content()
+    page.clock.fast_forward(3001)
+    assert page.locator('#chase-toast').is_hidden()
     page.evaluate('radioFixture.clearCrew()')
     for t in range(8, 11):
         feed(t, 150, 250+t-8)
