@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createBalloonAutopilot } from './balloonAutopilot.js';
-import { addTeamLabel } from './teamLabels.js';
+import { addTeamLabel, updateTeamLabel } from './teamLabels.js';
 import { createTeamPilot, segmentViolation, flightViolation } from './creativeAirspace.js';
 
 export async function loadTeamBalloonModel() {
@@ -92,9 +92,11 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds,
     pos.y = getHeight(pos.x, pos.z) + profile.height;
     mesh.position.copy(pos);
     group.add(mesh);
+    const label = addTeamLabel(mesh, { text: `${['赤','橙','紫','緑','桃'][index]}${index+2}`,
+      color: '#b9c0c5', name: `traffic-label-${index+2}`, width: 34, subdued: true });
     const valid=!airspace || !flightViolation(pos,airspace,getHeight);
     mesh.visible=valid;
-    return { id:`traffic-${index}`, mesh, pos, active:valid, vy: 0, heat: 0.5, burner: false, rip: false, profile,
+    return { id:`traffic-${index}`, mesh, label, pos, active:valid, vy: 0, heat: 0.5, burner: false, rip: false, profile,
       pilot: airspace ? createTeamPilot({windAt,airspace,getHeight,targetX:profile.dx,targetZ:profile.dz})
         : createBalloonAutopilot({ windAt,targetX: profile.dx, targetZ: profile.dz, cruiseScanFt: profile.cruise }) };
   });
@@ -143,7 +145,19 @@ export function createCreativeFleet({ startX, startZ, getHeight, windAt, bounds,
       }
     }
   }
-  return { group, update, positions: () => balloons.map(balloon => balloon.pos),
+  const projected = new THREE.Vector3();
+  function updateLabels(topActive, camera, viewportHeight) {
+    for (const balloon of balloons) {
+      const { label, active } = balloon;
+      label.visible = false;
+      if (!topActive || !active) continue;
+      label.getWorldPosition(projected).project(camera);
+      label.visible = Math.abs(projected.x) <= 1
+        && Math.abs(projected.y) <= 1 && Math.abs(projected.z) <= 1;
+      if (label.visible) updateTeamLabel(label, camera, viewportHeight);
+    }
+  }
+  return { group, update, updateLabels, positions: () => balloons.map(balloon => balloon.pos),
     observations: () => balloons.filter(b=>b.active).map(b=>({id:b.id,name:`${['赤','橙','紫','緑','桃'][TRAFFIC.indexOf(b.profile)]}の${TRAFFIC.indexOf(b.profile)+2}号気球`,x:b.pos.x,y:b.pos.y,z:b.pos.z})),
     soundSources: () => balloons.filter(b=>b.active).map(({ pos, burner, rip }) => ({ pos, burner, rip })) };
 }

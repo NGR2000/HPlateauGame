@@ -943,7 +943,7 @@ const RACE_CHASE_UP_M = 6;
 // 距離は2体の間隔に応じて自動で伸ばすので、離れるほどカメラも引く
 let raceOverview = false, raceTop = false, topPreviousOverview = false;
 const raceTopCamera = createTopView({element:renderer.domElement,isActive:()=>raceTop});
-const chaseRace = { dropConfirmed:false,landingConfirmed:false,windPoints:0,crewPoints:0,landingInZone:false,dropPosition:null, finished: false, reported: false, caught: false, afterLanding: false, landingDistance: null };
+const chaseRace = { dropConfirmed:false,landingConfirmed:false,windPoints:0,crewPoints:0,landingInZone:false,dropPosition:null, finished: false, reported: false, caught: false, afterLanding: false, landingDistance: null, targetLandingDistance: null };
 const chaseRadioLog = [];
 let chaseToastTimer = null;
 const CHASE_BEST_KEY = creativeWorld?'chase-radio-score-best-v3':'chase-radio-real-score-best-v2'; // 通常モードの自己ベスト(BEST_KEY)とは別に持つ
@@ -1120,6 +1120,7 @@ function updateRaceControlsEnabled() {
 
 function updateCreativeTeamLabels() {
   if (!creativeWorld) return;
+  creativeFleet?.updateLabels(raceTop, raceTopCamera.camera, innerHeight);
   const balloonLabel = scene.getObjectByName('team-balloon-label');
   const carLabel = scene.getObjectByName('team-car-label');
   for (const label of [balloonLabel, carLabel]) {
@@ -1615,9 +1616,16 @@ function finishChase(caught, afterLanding, note) {
   } catch { /* 保存できなくても結果は表示する */ }
   document.querySelector('#result .r-title').textContent = note;
   document.querySelector('#result .r-dist').hidden = true;
-  const landing = chaseRace.landingDistance === null ? '' : `\n着地時の車との距離 ${chaseRace.landingDistance.toFixed(1)}m`;
-  document.getElementById('result-sub').textContent =
-    `合計 ${points.total} 点\n回収・着地確認 ${points.recovery} 点 ／ 無線報告 ${points.report} 点${landing}\n自己ベスト ${Math.max(best, points.total)} 点`;
+  const landing = chaseRace.landingDistance === null ? '' : `着地時の車との距離 ${chaseRace.landingDistance.toFixed(1)}m`;
+  const resultSub = document.getElementById('result-sub');
+  resultSub.textContent = `合計 ${points.total} 点\n回収・着地確認 ${points.recovery} 点 ／ 無線報告 ${points.report} 点`;
+  if (creativeWorld && chaseRace.targetLandingDistance !== null) {
+    const distances = document.createElement('span');
+    distances.className = 'r-landing-distances';
+    distances.textContent = `\nマーカーとターゲット中心の距離 ${chaseRace.targetLandingDistance.toFixed(1)}m\n${landing}`;
+    resultSub.append(distances);
+  } else if (landing) resultSub.append(`\n${landing}`);
+  resultSub.append(`\n自己ベスト ${Math.max(best, points.total)} 点`);
   document.getElementById('result-sub').style.whiteSpace = 'pre-line';
   document.getElementById('result-retry').textContent = 'もう一度走る';
   document.getElementById('result').style.display = '';
@@ -1730,6 +1738,7 @@ function onMarkerLanded(pos) {
     if (chaseRace.finished) return;
     const car = raceCar.info();
     chaseRace.landingDistance = Math.hypot(pos.x - car.x, pos.z - car.z);
+    if (creativeWorld) chaseRace.targetLandingDistance = Math.hypot(pos.x - TARGET_XZ.x, pos.z - TARGET_XZ.z);
     if(insideTargetZone(pos,TARGET_XZ)){
       chaseRace.landingInZone=true;
       chaseRadio('計測班：100m区域内に着地。区域外100〜400mで停車し、着地確認を送ってください。計測・回収はこちらで行います。');

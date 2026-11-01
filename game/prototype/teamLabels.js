@@ -1,26 +1,28 @@
 import * as THREE from 'three';
 
 // 画面を塞がない、小さな1行のチーム目印。寸法はCSSピクセル。
-export function addTeamLabel(group, { text, color, name, width }) {
-  const height = 30;
+export function addTeamLabel(group, { text, color, name, width, subdued = false }) {
+  const height = subdued ? 22 : 30;
   const canvas = document.createElement('canvas');
   canvas.width = width * 3;
   canvas.height = height * 3;
   const ctx = canvas.getContext('2d');
   ctx.scale(3, 3);
-  ctx.fillStyle = 'rgba(10, 20, 30, 0.9)';
+  ctx.fillStyle = subdued ? 'rgba(10, 20, 30, 0.55)' : 'rgba(10, 20, 30, 0.9)';
   ctx.beginPath();
-  ctx.roundRect(0, 0, width, 26, 5);
+  ctx.roundRect(0, 0, width, subdued ? 20 : 26, 5);
   ctx.fill();
   ctx.fillStyle = color;
-  ctx.fillRect(4, 24, width - 8, 2);
-  ctx.beginPath();
-  ctx.arc(width / 2, 28, 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.font = 'bold 14px "Yu Gothic UI", sans-serif';
+  if (!subdued) {
+    ctx.fillRect(4, 24, width - 8, 2);
+    ctx.beginPath();
+    ctx.arc(width / 2, 28, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.font = `${subdued ? '12px' : 'bold 14px'} "Yu Gothic UI", sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, width / 2, 13);
+  ctx.fillText(text, width / 2, subdued ? 10 : 13);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const label = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -40,7 +42,7 @@ export function addTeamLabel(group, { text, color, name, width }) {
   label.position.y += 0.3;
   // 札の下端をモデルの上に置き、画面上で4.5pxだけ間を空ける。
   label.center.set(0.5, -0.15);
-  label.renderOrder = 20;
+  label.renderOrder = subdued ? 18 : 20;
   group.add(label);
   const leader = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
